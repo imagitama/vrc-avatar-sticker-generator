@@ -4,7 +4,11 @@ Generates Telegram stickers from a VRChat avatar.
 
 <img src="assets/default-example.png">
 
-See the Canis Woof sticker pack: [https://t.me/addstickers/CanisWoof](https://t.me/addstickers/CanisWoof)
+I made some packs to show it off: 
+
+- [https://t.me/addstickers/CanisWoof](https://t.me/addstickers/CanisWoof)
+- [https://t.me/addstickers/ShibaInuVRC](https://t.me/addstickers/ShibaInuVRC) (ImageMagick'd)
+- [https://t.me/addstickers/AwtterVRC](https://t.me/addstickers/AwtterVRC) (ImageMagick'd)
 
 How it works:
 
