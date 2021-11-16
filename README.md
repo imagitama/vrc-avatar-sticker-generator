@@ -2,6 +2,8 @@
 
 Generates Telegram stickers from a VRChat avatar.
 
+See the Canis Woof sticker pack: [https://t.me/addstickers/CanisWoof](https://t.me/addstickers/CanisWoof)
+
 How it works:
 
 1. Adds a simple white outline to all renderers in the scene
