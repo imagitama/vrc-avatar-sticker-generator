@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.IO;
 using System.Threading.Tasks;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -13,15 +14,78 @@ using cakeslice;
 
 public class VRCAvatarStickerGenerator : EditorWindow
 {
+    [Serializable]
+    class ParameterOverride {
+        public string name;
+        public string type;
+        public string value;
+    }
+
     int pixelWidth = 512;
-    float distanceFromHead = 1.25f;
-    float headOffset = 0.05f;
-    float borderThickness = 6f;
+    float distanceFromHead = 0.5f;
+    float headOffset = -0.02f;
+    int borderThickness = 10;
     bool hasStarted = false;
     string pathToStickersFolder;
     AnimatorController finalAnimatorController;
     GameObject cameraObject;
     Camera camera;
+    bool isPreviewing = false;
+
+    // confirmation
+    [SerializeField]
+    bool needsConfirmation;
+    bool hasConfirmed = false;
+
+    // single
+    [SerializeField]
+    bool isCreatingSingleSticker = false;
+    [SerializeField]
+    Gestures selectedGestureLeft;
+    [SerializeField]
+    Gestures selectedGestureRight;
+
+    // override params
+    bool isOverridingParams = false;
+    string newParameterOverrideName;
+    string newParameterOverrideType;
+    string newParameterOverrideValue;
+    List<ParameterOverride> defaultParameterOverrides = new List<ParameterOverride>() {
+        new ParameterOverride() {
+            name = "Grounded",
+            type = "bool",
+            value = "true"
+        },
+        new ParameterOverride() {
+            name = "GestureLeftWeight",
+            type = "float",
+            value = "1.0"
+        },
+        new ParameterOverride() {
+            name = "GestureRightWeight",
+            type = "float",
+            value = "1.0"
+        }
+    };
+    
+    [SerializeField]
+    List<ParameterOverride> parameterOverrides = new List<ParameterOverride>() {
+        new ParameterOverride() {
+            name = "Grounded",
+            type = "bool",
+            value = "true"
+        },
+        new ParameterOverride() {
+            name = "GestureLeftWeight",
+            type = "float",
+            value = "1.0"
+        },
+        new ParameterOverride() {
+            name = "GestureRightWeight",
+            type = "float",
+            value = "1.0"
+        }
+    };
 
     // for resetting
     Vector3 originalArmatureScale;
@@ -46,21 +110,58 @@ public class VRCAvatarStickerGenerator : EditorWindow
         thumbsup = 7
     }
 
+    public VRCAvatarStickerGenerator() {
+        if (parameterOverrides == null) {
+            // ResetDefaultParameterOverrides();
+        }
+    }
+
     [MenuItem("PeanutTools/VRC Avatar Sticker Generator")]
     static void Init()
     {
         EditorWindow.GetWindow(typeof (VRCAvatarStickerGenerator));
     }
 
+    void GuiLine()
+    {
+        Rect rect = EditorGUILayout.GetControlRect(false, 1);
+        rect.height = 1;
+        EditorGUI.DrawRect(rect, new Color (0.5f, 0.5f, 0.5f, 1) );
+    }
+
     private void OnGUI()
     {
+        GUILayout.Label("VRC Avatar Sticker Generator", EditorStyles.boldLabel);
+        GUILayout.Label("By @HiPeanutBuddha");
+        GUILayout.Label("https://github.com/imagitama/vrc-avatar-sticker-generator");
+        
+        GUILayout.Label("");
+
+        GuiLine();
+        
+        GUILayout.Label("");
+
         if (Application.isPlaying)
         {
-            GUILayout.Label("Play mode!");
+            if (needsConfirmation == true && !hasConfirmed) {
+                if (GUILayout.Button("Proceed")) {
+                    ConfirmStickerCreation();
+                }
+            } else {
+                GUILayout.Label("Creating stickers...");
+            }
             return;
         }
 
-        GUILayout.Label("VRC avatar to use for animator controllers:");
+        if (isPreviewing) {
+            if (GUILayout.Button("Stop Preview"))
+            {
+                StopPreview();
+            }
+            return;
+        }
+
+        GUILayout.Label("Select an avatar with a VRChat avatar descriptor:");
 
         VRCAvatarDescriptor vrcAvatarDescriptor =
             EditorGUILayout
@@ -71,40 +172,185 @@ public class VRCAvatarStickerGenerator : EditorWindow
         {
             vrcAvatar = vrcAvatarDescriptor.gameObject;
         }
+        
+        GUILayout.Label("");
 
-        GUILayout.Label("Head to focus on with camera:");
+        GUILayout.Label("Head bone the camera will look at (rest of body is hidden):");
         head = EditorGUILayout.ObjectField(head, typeof (Transform), true) as Transform;
 
-        GUILayout.Label("Vertical offset head - up (default 0.05f):");
+        if (vrcAvatar != null && GUILayout.Button("Find Head")) {
+            FindHead();
+        }
+
+        GUILayout.Label("");
+
+        GUILayout.Label("Vertical offset head (default -0.02 for Canis Woof):");
         headOffset = EditorGUILayout.FloatField(headOffset);
 
-        GUILayout.Label("Distance from head (default 1.25):");
-        distanceFromHead = EditorGUILayout.FloatField(distanceFromHead);
+        GUILayout.Label("");
 
-        GUILayout.Label("Border thickness 1-6 (default 6):");
-        borderThickness = EditorGUILayout.FloatField(borderThickness);
+        GUILayout.Label("Distance from head (default 0.5 for Canis Woof):");
+        distanceFromHead = EditorGUILayout.FloatField(distanceFromHead);
+        
+        GUILayout.Label("");
+
+        GUILayout.Label("Border thickness as pixels (default 10):");
+        borderThickness = EditorGUILayout.IntField(borderThickness);
+        
+        GUILayout.Label("");
+
+        GUILayout.Label("Wait for you to click a confirm button before actually creating the stickers (default false):");
+        needsConfirmation = EditorGUILayout.Toggle("Require confirm:", needsConfirmation == null ? false : needsConfirmation);
+        
+        GUILayout.Label("");
+        
+        GuiLine();
 
         if (vrcAvatar == null || head == null)
         {
-            GUILayout.Label("Waiting for a VRC avatar and head to focus on!");
+            GUILayout.Label("Waiting for a VRC avatar and head!");
             return;
         }
+        
+        GUILayout.Label("");
 
-        if (camera != null) {
-            if (GUILayout.Button("Stop Preview"))
+        if (GUILayout.Button("Preview"))
+        {
+            StartPreview();
+        }
+        
+        if (isCreatingSingleSticker == false) {
+            GUILayout.Label("");
+
+            if (GUILayout.Button("Create All Stickers"))
             {
-                StopPreview();
+                EnterCreationMode();
             }
-        } else {
-            if (GUILayout.Button("Preview"))
-            {
-                StartPreview();
+            GUILayout.Label("Warning: This overrides any existing stickers!");
+        }
+
+        GUILayout.Label("");
+
+        GuiLine();
+        
+        GUILayout.Label("");
+
+        if (GUILayout.Button("Toggle Create Single Sticker"))
+        {
+            ToggleCreateSingleSticker();
+        }
+
+        if (isCreatingSingleSticker) {
+            GUILayout.Label("");
+
+            selectedGestureLeft = (Gestures)EditorGUILayout.EnumPopup("Gesture Left:", selectedGestureLeft);
+            selectedGestureRight = (Gestures)EditorGUILayout.EnumPopup("Gesture Right:", selectedGestureRight);
+
+            if (selectedGestureLeft != null && selectedGestureRight != null) {
+                if (GUILayout.Button("Create Single Sticker")) {
+                    EnterCreationMode();
+                }
+                GUILayout.Label("Warning: This overrides any existing stickers!");
             }
         }
 
-        if (GUILayout.Button("Create Stickers"))
-        {
-            BeginCreatingStickers();
+        GUILayout.Label("");
+
+        GuiLine();
+        
+        GUILayout.Label("");
+
+        if (GUILayout.Button("Toggle Override Params")) {
+            ToggleOverrideParams();
+        }
+
+        if (isOverridingParams) {
+            GUILayout.Label("");
+
+            if (parameterOverrides.Count == 0) {
+                GUILayout.Label("No parameters found");
+            }
+
+            foreach (ParameterOverride parameterOverride in parameterOverrides.ToList()) {
+                GUILayout.Label(parameterOverride.name + " => " + parameterOverride.value);
+                
+                if (GUILayout.Button("Delete", GUILayout.Width(100))) {
+                    DeleteParameterOverride(parameterOverride);
+                }
+            }
+
+            GUILayout.Label("");
+
+            GUILayout.Label("Parameter name:");
+            newParameterOverrideName = EditorGUILayout.TextField(newParameterOverrideName);
+
+            GUILayout.Label("Parameter type (bool, string, float, int):");
+            newParameterOverrideType = EditorGUILayout.TextField(newParameterOverrideType);
+            
+            GUILayout.Label("Parameter value:");
+            newParameterOverrideValue = EditorGUILayout.TextField(newParameterOverrideValue);
+
+            if (GUILayout.Button("Add")) {
+                AddParameterOverride(newParameterOverrideName, newParameterOverrideType, newParameterOverrideValue);
+            }
+
+            GUILayout.Label("");
+
+            if (GUILayout.Button("Reset To Defaults")) {
+                ResetDefaultParameterOverrides();
+            }
+        }
+    }
+
+    void ConfirmStickerCreation() {
+        hasConfirmed = true;
+
+        if (isCreatingSingleSticker) {
+            CreateSingleSticker();
+        } else {
+            CreateStickers();
+        }
+    }
+    
+    void ResetDefaultParameterOverrides() {
+        parameterOverrides = defaultParameterOverrides.ToList();
+    }
+
+    void DeleteParameterOverride(ParameterOverride parameterOverride) {
+        parameterOverrides.Remove(parameterOverride);
+    }
+
+    void AddParameterOverride(string name, string type, string value) {
+        ParameterOverride newParameterOverride = new ParameterOverride() {
+            name = name,
+            type = type,
+            value = value
+        };
+        parameterOverrides.Add(newParameterOverride);
+    }
+    
+    void ToggleOverrideParams() {
+        isOverridingParams = !isOverridingParams; 
+    }
+
+    void ToggleCreateSingleSticker() {
+        isCreatingSingleSticker = !isCreatingSingleSticker; 
+    }
+
+    void EnterCreationMode() {
+        Debug.Log("Starting to create single sticker...");
+
+        hasStarted = false;
+        hasConfirmed = false;
+
+        EditorApplication.EnterPlaymode();
+    }
+
+    void FindHead() {
+        Transform match = vrcAvatar.GetComponentsInChildren<Transform>().Where(k => k.gameObject.name == "Head").FirstOrDefault();
+
+        if (match != null) {
+            head = match;
         }
     }
 
@@ -115,7 +361,8 @@ public class VRCAvatarStickerGenerator : EditorWindow
             return;
         }
 
-        if (vrcAvatar == null || head == null)
+        // wait for deserialization
+        if (vrcAvatar == null || head == null || needsConfirmation == null)
         {
             return;
         }
@@ -123,7 +370,21 @@ public class VRCAvatarStickerGenerator : EditorWindow
         if (!hasStarted)
         {
             hasStarted = true;
-            CreateStickers();
+
+            PrepareForCreation();
+
+            Debug.Log(needsConfirmation);
+            Debug.Log(hasConfirmed);
+
+            if (needsConfirmation == true && !hasConfirmed) {
+                return;
+            } else {
+                if (isCreatingSingleSticker) {
+                    CreateSingleSticker();
+                } else {
+                    CreateStickers();
+                }
+            }
         }
     }
 
@@ -157,6 +418,7 @@ public class VRCAvatarStickerGenerator : EditorWindow
     }
 
     void StartPreview() {
+        isPreviewing = true;
         SetLighting();
         ScaleAvatar();
         AddOutline();
@@ -171,6 +433,7 @@ public class VRCAvatarStickerGenerator : EditorWindow
     }
 
     void StopPreview() {
+        isPreviewing = false;
         RevertLighting();
         RevertAvatarScale();
         RemoveOutline();
@@ -197,10 +460,7 @@ public class VRCAvatarStickerGenerator : EditorWindow
         }
     }
 
-    async void CreateStickers()
-    {
-        Debug.Log("Creating stickers...");
-        
+    async void PrepareForCreation() {
         CreateFolders();
 
         SetLighting();
@@ -218,10 +478,37 @@ public class VRCAvatarStickerGenerator : EditorWindow
         await WaitForAnimatorToApply();
 
         CreateCamera();
+        
+        AddDebugging();
+    }
+
+    async void CreateSingleSticker()
+    {
+        if (selectedGestureLeft == null || selectedGestureRight == null) {
+            Debug.Log("Cannot create single sticker without left and right!");
+            return;
+        }
+
+        CreateStickers(selectedGestureLeft, selectedGestureRight);
+    }
+
+    async void CreateStickers(Gestures? gestureLeft = null, Gestures? gestureRight = null)
+    {
+        Debug.Log("Creating stickers...");
     
-        await CreateAllStickers();
+        if (gestureLeft != null && gestureRight != null) {
+            await ActuallyCreateSingleSticker((Gestures)gestureLeft, (Gestures)gestureRight);
+        } else {
+            await ActuallyCreateAllStickers();
+        }
 
         Debug.Log("Stickers have been created");
+
+        StopPlaying();
+    }
+
+    void StopPlaying() {
+        EditorApplication.isPlaying = false;
     }
 
     void SetLighting() {
@@ -272,15 +559,47 @@ public class VRCAvatarStickerGenerator : EditorWindow
         AddFinalAnimatorControllerToAvatar();
     }
 
-    async Task CreateAllStickers() {
+    string GetFileNameForGestures(Gestures gestureLeft, Gestures gestureRight) {
+        return "left_" + Enum.GetName(typeof (Gestures), gestureLeft) + "_right_" + Enum.GetName(typeof (Gestures), gestureRight);
+    }
+
+    async Task ActuallyCreateSingleSticker(Gestures gestureLeft, Gestures gestureRight) {
+        // the only guaranteed way to make sure gestures do not do weird behavior to each other
+        ReplaceAnimator();
+
+        Animator animator = vrcAvatar.GetComponent<Animator>();
+
+        animator.SetInteger("GestureLeft", (int)gestureLeft);
+        animator.SetInteger("GestureRight", (int)gestureRight);
+
+        await WaitForGestureToApply();
+
+        string filename = GetFileNameForGestures(gestureLeft, gestureRight);
+        
+        Debug.Log(filename);
+
+        FocusCameraOnAvatar();
+        
+        await WaitForGestureToApply();
+
+        CreateStickerUsingCamera(filename);
+    }
+
+    async Task ActuallyCreateAllStickers() {
         int leftHandValue = 0;
         int rightHandValue = 0;
 
         string workingOn = "LeftHand";
 
-        bool done = false;
+        List<string> completedFilenames = new List<string>();
 
-        while (done == false) {
+        for (int i = 0; i < 64; i++) {
+            // catch weird case where it keeps going even after exit play mode
+            if (!EditorApplication.isPlaying)
+            {
+                return;
+            }
+
             // the only guaranteed way to make sure gestures do not do weird behavior to each other
             ReplaceAnimator();
 
@@ -291,13 +610,21 @@ public class VRCAvatarStickerGenerator : EditorWindow
 
             await WaitForGestureToApply();
 
-            string filename = "left_" + Enum.GetName(typeof (Gestures), leftHandValue) + "_right_" + Enum.GetName(typeof (Gestures), rightHandValue);
+            string filename = GetFileNameForGestures((Gestures)leftHandValue, (Gestures)rightHandValue);
+
+            Debug.Log(filename);
 
             FocusCameraOnAvatar();
             
             await WaitForGestureToApply();
 
             CreateStickerUsingCamera(filename);
+
+            if (completedFilenames.Exists(item => item == filename)) {
+                Debug.Log("Filename " + filename + " already exists!");
+            }
+
+            completedFilenames.Add(filename);
 
             if (workingOn == "LeftHand") {
                 if (leftHandValue < 7) {
@@ -333,7 +660,7 @@ public class VRCAvatarStickerGenerator : EditorWindow
                     rightHandValue = rightHandValue + 1;
                     leftHandValue = 0;
                 } else {
-                    done = true;
+                    // done
                 }
             }
         }
@@ -342,18 +669,13 @@ public class VRCAvatarStickerGenerator : EditorWindow
     void AddOutline() {
         Debug.Log("Adding outline to avatar...");
 
-        Renderer [] renderers = vrcAvatar.GetComponentsInChildren<Renderer>();
+        Renderer[] renderers = vrcAvatar.GetComponentsInChildren<Renderer>();
 
         Debug.Log("Found " + renderers.Length + " renderers");
 
-        foreach (Renderer renderer in renderers) {
-            cakeslice.Outline outline = renderer.gameObject.AddComponent<cakeslice.Outline>();
-
-            // known bug in cakeslice.Outline that object does not check for visibility on enable
-            // so let's hack into it and force it to be visible!
-            MethodInfo privateMethod = outline.GetType().GetMethod("OnBecameVisible", BindingFlags.NonPublic | BindingFlags.Instance);
-            privateMethod.Invoke(outline, new object[] { });
-        }
+        JumpFloodOutlineRenderer jumpFloodOutlineRenderer = vrcAvatar.AddComponent<JumpFloodOutlineRenderer>();
+        jumpFloodOutlineRenderer.outlinePixelWidth = borderThickness;
+        jumpFloodOutlineRenderer.renderers = new List<Renderer>(renderers);
 
         Debug.Log("Done");
     }
@@ -361,24 +683,17 @@ public class VRCAvatarStickerGenerator : EditorWindow
     void RemoveOutline() {
         Debug.Log("Removing outline from avatar...");
 
-        Renderer [] renderers = vrcAvatar.GetComponentsInChildren<Renderer>();
-
-        Debug.Log("Found " + renderers.Length + " renderers");
-
-        foreach (Renderer renderer in renderers) {
-            cakeslice.Outline outline = renderer.gameObject.GetComponent<cakeslice.Outline>();
-            DestroyImmediate(outline);
-        }
+        DestroyImmediate(vrcAvatar.GetComponent<JumpFloodOutlineRenderer>());
 
         Debug.Log("Done");
     }
 
     async Task WaitForAnimatorToApply() {
-        await Task.Delay(2000);
+        await Task.Delay(1000);
     }
 
     async Task WaitForGestureToApply() {
-        await Task.Delay(2000);
+        await Task.Delay(1000);
     }
 
     void CreateCamera()
@@ -401,13 +716,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
         RenderTexture renderTexture = new RenderTexture(pixelWidth, pixelWidth, 24);
         camera.targetTexture = renderTexture;
         
-        OutlineEffect outlineEffect = cameraObject.AddComponent<OutlineEffect>();
-        outlineEffect.lineThickness = borderThickness;
-        outlineEffect.lineIntensity = 10;
-        outlineEffect.fillAmount = 0;
-        outlineEffect.lineColor0 = new Color(1, 1, 1);
-        outlineEffect.alphaCutoff = .2f;
-        
         Debug.Log("Camera created");
     }
 
@@ -419,6 +727,11 @@ public class VRCAvatarStickerGenerator : EditorWindow
     }
 
     void CreateStickerUsingCamera(string filenameWithoutExt) {
+        // catch end play mode
+        if (camera == null) {
+            return;
+        }
+
         RenderTexture currentRT = RenderTexture.active;
         RenderTexture.active = camera.targetTexture;
  
@@ -502,6 +815,7 @@ float cameraView = 2.0f * Mathf.Tan(0.5f * Mathf.Deg2Rad * camera.fieldOfView); 
 float distance = cameraDistance * objectSize / cameraView; // Combined wanted distance from the object
 distance += 0.5f * objectSize; // Estimated offset from the center to the outside of the object
 camera.transform.position = bounds.center - distance * camera.transform.forward;
+camera.transform.position = new Vector3(camera.transform.position.x, camera.transform.position.y + headOffset, camera.transform.position.z);
 
 
 // camera.transform.position = vrcAvatar.transform.position * -(2 * bounds.size.y);
@@ -526,9 +840,22 @@ camera.transform.position = bounds.center - distance * camera.transform.forward;
     {
         Animator animator = vrcAvatar.GetComponent<Animator>();
         animator.runtimeAnimatorController = finalAnimatorController;
-        animator.SetBool("Grounded", true);
-        animator.SetFloat("GestureLeftWeight", 1.0f);
-        animator.SetFloat("GestureRightWeight", 1.0f);
+
+        foreach (ParameterOverride parameterOverride in parameterOverrides) {
+            Debug.Log("Setting param " + parameterOverride.name + " to " + parameterOverride.value);
+
+            switch (parameterOverride.type) {
+                case "bool":
+                    animator.SetBool(parameterOverride.name, bool.Parse(parameterOverride.value));
+                    break;
+                case "int":
+                    animator.SetInteger(parameterOverride.name, Int32.Parse(parameterOverride.value));
+                    break;
+                case "float":
+                    animator.SetFloat(parameterOverride.name, float.Parse(parameterOverride.value));
+                    break;
+            }
+        }
     }
 
     void CreateFinalAnimatorController()
@@ -717,14 +1044,5 @@ camera.transform.position = bounds.center - distance * camera.transform.forward;
         Debug.Log("Adding " + animatorControllerToAdd.name + " to avatar...");
 
         MergeVrcAnimatorIntoFinalAnimatorController (animatorControllerToAdd);
-    }
-
-    void BeginCreatingStickers()
-    {
-        Debug.Log("Starting...");
-
-        hasStarted = false;
-
-        EditorApplication.EnterPlaymode();
     }
 }
