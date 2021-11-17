@@ -1,4 +1,4 @@
-# 0.0.4
+# 0.0.5
 
 - replace outline effect with superior one
 - add find head button
@@ -8,6 +8,9 @@
 - animation delay from 2sec to 1sec
 - fixed head offset not applying
 - added confirmation button
+
+# 0.0.4
+- add missing shader
 
 # 0.0.3
 

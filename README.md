@@ -6,7 +6,7 @@ It generates stickers like this:
 
 <img src="assets/default-example.png">
 
-I **strongly** recommend you use ImageMagick as it will make your stickers look like this (see section):
+I **strongly** recommend you use ImageMagick as it will trim the transparency around your sticker:
 
 <img src="assets/imagemagick-example.png">
 
@@ -42,14 +42,13 @@ Work in progress. For now use ImageMagick (see below).
 
 <img src="assets/imagemagick-example.png">
 
-To do a better outline and no transparent edges:
+To trim the transparency around your stickers:
 
 1. Download and install [ImageMagick](https://imagemagick.org/script/download.php)
-2. In the Unity plugin set the border thickness to 0
-3. Create stickers
-4. Run `use-imagemagick.bat` by double-clicking in Windows Explorer
+2. Create stickers
+3. Run `use-imagemagick.bat` by double-clicking in Windows Explorer
 
-Your stickers should now look much nicer.
+Your stickers should now be nicely trimmed.
 
 ## How it works
 
