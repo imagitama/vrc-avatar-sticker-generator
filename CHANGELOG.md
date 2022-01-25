@@ -1,3 +1,7 @@
+# 0.0.6
+
+- replace border creation with ImageMagick (included)
+
 # 0.0.5
 
 - replace outline effect with superior one

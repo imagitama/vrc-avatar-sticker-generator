@@ -10,7 +10,6 @@ using UnityEditor.Animations;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDK3.Avatars.Components;
-using cakeslice;
 
 public class VRCAvatarStickerGenerator : EditorWindow
 {
@@ -24,7 +23,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
     int pixelWidth = 512;
     float distanceFromHead = 0.5f;
     float headOffset = -0.02f;
-    int borderThickness = 10;
     bool hasStarted = false;
     string pathToStickersFolder;
     AnimatorController finalAnimatorController;
@@ -191,11 +189,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
 
         GUILayout.Label("Distance from head (default 0.5 for Canis Woof):");
         distanceFromHead = EditorGUILayout.FloatField(distanceFromHead);
-        
-        GUILayout.Label("");
-
-        GUILayout.Label("Border thickness as pixels (default 10):");
-        borderThickness = EditorGUILayout.IntField(borderThickness);
         
         GUILayout.Label("");
 
@@ -421,7 +414,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
         isPreviewing = true;
         SetLighting();
         ScaleAvatar();
-        AddOutline();
         CreateCamera();
         AddDebugging();
         FocusOnCamera();
@@ -436,7 +428,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
         isPreviewing = false;
         RevertLighting();
         RevertAvatarScale();
-        RemoveOutline();
         StopFocusingOnCamera();
         RemoveCamera();
     }
@@ -466,8 +457,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
         SetLighting();
 
         ScaleAvatar();
-
-        AddOutline();
 
         CreateFinalAnimatorController();
 
@@ -505,6 +494,8 @@ public class VRCAvatarStickerGenerator : EditorWindow
         Debug.Log("Stickers have been created");
 
         StopPlaying();
+
+        ProcessAllImages();
     }
 
     void StopPlaying() {
@@ -664,28 +655,6 @@ public class VRCAvatarStickerGenerator : EditorWindow
                 }
             }
         }
-    }
-
-    void AddOutline() {
-        Debug.Log("Adding outline to avatar...");
-
-        Renderer[] renderers = vrcAvatar.GetComponentsInChildren<Renderer>();
-
-        Debug.Log("Found " + renderers.Length + " renderers");
-
-        JumpFloodOutlineRenderer jumpFloodOutlineRenderer = vrcAvatar.AddComponent<JumpFloodOutlineRenderer>();
-        jumpFloodOutlineRenderer.outlinePixelWidth = borderThickness;
-        jumpFloodOutlineRenderer.renderers = new List<Renderer>(renderers);
-
-        Debug.Log("Done");
-    }
-
-    void RemoveOutline() {
-        Debug.Log("Removing outline from avatar...");
-
-        DestroyImmediate(vrcAvatar.GetComponent<JumpFloodOutlineRenderer>());
-
-        Debug.Log("Done");
     }
 
     async Task WaitForAnimatorToApply() {
@@ -1044,5 +1013,23 @@ camera.transform.position = new Vector3(camera.transform.position.x, camera.tran
         Debug.Log("Adding " + animatorControllerToAdd.name + " to avatar...");
 
         MergeVrcAnimatorIntoFinalAnimatorController (animatorControllerToAdd);
+    }
+
+    void ProcessAllImages() {
+        Debug.Log("Processing all images...");
+
+        string globToImages = pathToStickersFolder + "\\*.png";
+        string outputPath = pathToStickersFolder + "\\output";
+
+        string fileName = Application.dataPath.Replace("/", "\\") + "\\PeanutTools\\VRC_Avatar_Sticker_Generator\\bin\\ImageMagick\\magick.exe";
+        string args = "mogrify -path \"" + outputPath + "\" -bordercolor none -border 2 -background white -alpha background -channel A -blur 0x2 -level 0,0% -trim +repage -resize 512x512 \"" + globToImages + "\"";
+
+        Debug.Log(fileName + " " + args);
+
+        System.Diagnostics.Process process = new System.Diagnostics.Process();
+        process.StartInfo.FileName = fileName;
+        process.StartInfo.Arguments = args;
+        process.Start();
+        process.WaitForExit();
     }
 }

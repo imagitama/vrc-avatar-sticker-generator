@@ -1,14 +1,8 @@
 # VRC Avatar Sticker Generator
 
-Generates Telegram stickers from a VRChat avatar.
+Generates Telegram stickers from a VRChat avatar:
 
-It generates stickers like this:
-
-<img src="assets/default-example.png">
-
-I **strongly** recommend you use ImageMagick as it will trim the transparency around your sticker:
-
-<img src="assets/imagemagick-example.png">
+<img src="assets/example.png">
 
 I made some packs to show it off: 
 
@@ -22,7 +16,6 @@ I made some packs to show it off:
 2. Go to PeanutTools -> VRC Avatar Sticker Generator.
 3. Fill out the form.
 4. Click "Create Stickers". Unity will go into Play Mode and will output to a Stickers folder (root of project).
-5. Exit play mode.
 
 ## FAQ
 
@@ -34,22 +27,6 @@ Your armature is hidden so just copy the object from the armature and have it fl
 
 You can tweak the scene lighting except the reflections and camera are hardcoded for now.
 
-### There is extra transparency / my outline looks ugly
-
-Work in progress. For now use ImageMagick (see below).
-
-## ImageMagick
-
-<img src="assets/imagemagick-example.png">
-
-To trim the transparency around your stickers:
-
-1. Download and install [ImageMagick](https://imagemagick.org/script/download.php)
-2. Create stickers
-3. Run `use-imagemagick.bat` by double-clicking in Windows Explorer
-
-Your stickers should now be nicely trimmed.
-
 ## How it works
 
 1. Adds a simple white outline to all renderers in the scene
@@ -57,3 +34,4 @@ Your stickers should now be nicely trimmed.
 3. Takes all of the animator controllers from the `VRC Avatar Descriptor`, flattens them, adds them to avatar 
 4. For each gesture combination it sets the animator parameter
 5. Exports as a PNG
+6. Outline and resizing done by ImageMagick (included)
