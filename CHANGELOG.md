@@ -1,3 +1,7 @@
+# 0.0.7
+
+- fix exception
+
 # 0.0.6
 
 - replace border creation with ImageMagick (included)
@@ -14,6 +18,7 @@
 - added confirmation button
 
 # 0.0.4
+
 - add missing shader
 
 # 0.0.3

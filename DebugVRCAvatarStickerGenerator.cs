@@ -9,7 +9,6 @@ using UnityEditor.Animations;
 using UnityEngine;
 using UnityEngine.UI;
 using VRC.SDK3.Avatars.Components;
-using cakeslice;
 
 class DebugVRCAvatarStickerGenerator : MonoBehaviour {
     void OnDrawGizmos() {
