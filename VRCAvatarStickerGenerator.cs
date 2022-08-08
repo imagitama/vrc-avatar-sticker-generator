@@ -1,525 +1,348 @@
 using System;
+using System.Linq;
+using System.Text;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
-using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Linq;
-using UnityEditor;
-using UnityEditor.Animations;
+using System.IO;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEditor.Animations;
+using System.Reflection;
+
+#if VRC_SDK_VRCSDK3
 using VRC.SDK3.Avatars.Components;
+#endif
 
-public class VRCAvatarStickerGenerator : EditorWindow
+public class VRCAvatarStickerGenerator : MonoBehaviour
 {
+    public Camera camera;
+    public Transform head;
+    public Animator animator;
+    [HideInInspector]
+    public AnimatorController[] animatorControllers;
+    public bool repositionCamera = true;
+    public float cameraDistance = 0.5f;
+    public float cameraOffset = 0f;
+    public int transitionDelay = 100;
+    [HideInInspector]
+    public ParameterSetting[] parameterSettings = new ParameterSetting[0];
+    public bool randomlyRotateVertically = true;
+    public bool randomlyRotateHorizontally = true;
+    // public bool lookAtCamera = true;
+    // public Transform eyeLeft;
+    // public Transform eyeRight;
+    public bool stripDynamicBones = true;
+    public bool stopPlayingAtEnd = true;
+    public bool hideBody = true;
+    public Transform armatureToHide;
+    public bool addBorder = true;
+
+    private bool done = false;
+    private bool hasStopped = false;
+    private System.Random random = new System.Random();
+    private Vector3 originalArmatureScale;
+    private Vector3 originalHeadScale;
+
+    public enum ParameterTypes {
+        Float,
+        Int,
+        Bool
+    }
+
     [Serializable]
-    class ParameterOverride {
+    public struct ParameterSetting {
         public string name;
-        public string type;
-        public string value;
+        public ParameterTypes type;
+        public bool boolValue;
+        public int intValue;
+        public float floatValue;
     }
 
-    int pixelWidth = 512;
-    float distanceFromHead = 0.5f;
-    float headOffset = -0.02f;
-    bool hasStarted = false;
-    string pathToStickersFolder;
-    AnimatorController finalAnimatorController;
-    GameObject cameraObject;
-    Camera camera;
-    bool isPreviewing = false;
-
-    // confirmation
-    [SerializeField]
-    bool needsConfirmation;
-    bool hasConfirmed = false;
-
-    // single
-    [SerializeField]
-    bool isCreatingSingleSticker = false;
-    [SerializeField]
-    Gestures selectedGestureLeft;
-    [SerializeField]
-    Gestures selectedGestureRight;
-
-    // override params
-    bool isOverridingParams = false;
-    string newParameterOverrideName;
-    string newParameterOverrideType;
-    string newParameterOverrideValue;
-    List<ParameterOverride> defaultParameterOverrides = new List<ParameterOverride>() {
-        new ParameterOverride() {
-            name = "Grounded",
-            type = "bool",
-            value = "true"
-        },
-        new ParameterOverride() {
-            name = "GestureLeftWeight",
-            type = "float",
-            value = "1.0"
-        },
-        new ParameterOverride() {
-            name = "GestureRightWeight",
-            type = "float",
-            value = "1.0"
-        }
-    };
-    
-    [SerializeField]
-    List<ParameterOverride> parameterOverrides = new List<ParameterOverride>() {
-        new ParameterOverride() {
-            name = "Grounded",
-            type = "bool",
-            value = "true"
-        },
-        new ParameterOverride() {
-            name = "GestureLeftWeight",
-            type = "float",
-            value = "1.0"
-        },
-        new ParameterOverride() {
-            name = "GestureRightWeight",
-            type = "float",
-            value = "1.0"
-        }
-    };
-
-    // for resetting
-    Vector3 originalArmatureScale;
-    Vector3 originalHeadScale;
-    Camera[] allCameras;
-    float originalReflectionIntensity;
-
-    [SerializeField]
-    Transform head;
-
-    [SerializeField]
-    GameObject vrcAvatar;
-
-    enum Gestures {
-        none = 0,
-        fist = 1,
-        open = 2,
-        point = 3,
-        peace = 4,
-        rocknroll = 5,
-        gun = 6,
-        thumbsup = 7
-    }
-
-    public VRCAvatarStickerGenerator() {
-        if (parameterOverrides == null) {
-            // ResetDefaultParameterOverrides();
-        }
-    }
-
-    [MenuItem("PeanutTools/VRC Avatar Sticker Generator")]
-    static void Init()
+    void Start()
     {
-        EditorWindow.GetWindow(typeof (VRCAvatarStickerGenerator));
+        if (camera == null) {
+            throw new System.Exception("No camera");
+        }
+
+        if (animator == null) {
+            throw new System.Exception("No animator");
+        }
+
+        if (head == null) {
+            head = animator.GetBoneTransform(HumanBodyBones.Head);
+        }
+
+        if (hideBody && armatureToHide == null) {
+            throw new System.Exception("No armature to hide");
+        }
     }
 
-    void GuiLine()
-    {
-        Rect rect = EditorGUILayout.GetControlRect(false, 1);
-        rect.height = 1;
-        EditorGUI.DrawRect(rect, new Color (0.5f, 0.5f, 0.5f, 1) );
+    void LateUpdate()
+    {  
+        if (!done) {
+            Begin();
+            done = true;
+        } 
     }
 
-    private void OnGUI()
-    {
-        GUILayout.Label("VRC Avatar Sticker Generator", EditorStyles.boldLabel);
-        GUILayout.Label("By @HiPeanutBuddha");
-        GUILayout.Label("https://github.com/imagitama/vrc-avatar-sticker-generator");
-        
-        GUILayout.Label("");
+    AnimatorController MergeAnimatorControllers(AnimatorController[] animatorControllersToMerge) {
+        var newAnimatorController = new AnimatorController();
+        List<AnimatorControllerLayer> newLayers = new List<AnimatorControllerLayer>();
+        List<AnimatorControllerParameter> newParameters = new List<AnimatorControllerParameter>();
 
-        GuiLine();
-        
-        GUILayout.Label("");
+        for (var i = 0; i < animatorControllersToMerge.Length; i++) {
+            var layers = animatorControllersToMerge[i].layers;
 
-        if (Application.isPlaying)
-        {
-            if (needsConfirmation == true && !hasConfirmed) {
-                if (GUILayout.Button("Proceed")) {
-                    ConfirmStickerCreation();
-                }
-            } else {
-                GUILayout.Label("Creating stickers...");
+            for (var l = 0; l < layers.Length; l++) {
+                newLayers.Add(layers[l]);
             }
-            return;
-        }
 
-        if (isPreviewing) {
-            if (GUILayout.Button("Stop Preview"))
-            {
-                StopPreview();
-            }
-            return;
-        }
+            var parameters = animatorControllersToMerge[i].parameters;
 
-        GUILayout.Label("Select an avatar with a VRChat avatar descriptor:");
-
-        VRCAvatarDescriptor vrcAvatarDescriptor =
-            EditorGUILayout
-                .ObjectField(vrcAvatar, typeof (VRCAvatarDescriptor), true) as
-            VRCAvatarDescriptor;
-
-        if (vrcAvatarDescriptor)
-        {
-            vrcAvatar = vrcAvatarDescriptor.gameObject;
-        }
-        
-        GUILayout.Label("");
-
-        GUILayout.Label("Head bone the camera will look at (rest of body is hidden):");
-        head = EditorGUILayout.ObjectField(head, typeof (Transform), true) as Transform;
-
-        if (vrcAvatar != null && GUILayout.Button("Find Head")) {
-            FindHead();
-        }
-
-        GUILayout.Label("");
-
-        GUILayout.Label("Vertical offset head (default -0.02 for Canis Woof):");
-        headOffset = EditorGUILayout.FloatField(headOffset);
-
-        GUILayout.Label("");
-
-        GUILayout.Label("Distance from head (default 0.5 for Canis Woof):");
-        distanceFromHead = EditorGUILayout.FloatField(distanceFromHead);
-        
-        GUILayout.Label("");
-
-        GUILayout.Label("Wait for you to click a confirm button before actually creating the stickers (default false):");
-        needsConfirmation = EditorGUILayout.Toggle("Require confirm:", needsConfirmation == null ? false : needsConfirmation);
-        
-        GUILayout.Label("");
-        
-        GuiLine();
-
-        if (vrcAvatar == null || head == null)
-        {
-            GUILayout.Label("Waiting for a VRC avatar and head!");
-            return;
-        }
-        
-        GUILayout.Label("");
-
-        if (GUILayout.Button("Preview"))
-        {
-            StartPreview();
-        }
-        
-        if (isCreatingSingleSticker == false) {
-            GUILayout.Label("");
-
-            if (GUILayout.Button("Create All Stickers"))
-            {
-                EnterCreationMode();
-            }
-            GUILayout.Label("Warning: This overrides any existing stickers!");
-        }
-
-        GUILayout.Label("");
-
-        GuiLine();
-        
-        GUILayout.Label("");
-
-        if (GUILayout.Button("Toggle Create Single Sticker"))
-        {
-            ToggleCreateSingleSticker();
-        }
-
-        if (isCreatingSingleSticker) {
-            GUILayout.Label("");
-
-            selectedGestureLeft = (Gestures)EditorGUILayout.EnumPopup("Gesture Left:", selectedGestureLeft);
-            selectedGestureRight = (Gestures)EditorGUILayout.EnumPopup("Gesture Right:", selectedGestureRight);
-
-            if (selectedGestureLeft != null && selectedGestureRight != null) {
-                if (GUILayout.Button("Create Single Sticker")) {
-                    EnterCreationMode();
-                }
-                GUILayout.Label("Warning: This overrides any existing stickers!");
+            for (var p = 0; p < parameters.Length; p++) {
+                newParameters.Add(parameters[p]);
             }
         }
 
-        GUILayout.Label("");
+        newAnimatorController.parameters = newParameters.ToArray();
+        newAnimatorController.layers = newLayers.ToArray();
 
-        GuiLine();
-        
-        GUILayout.Label("");
+        return newAnimatorController;
+    }
 
-        if (GUILayout.Button("Toggle Override Params")) {
-            ToggleOverrideParams();
+    void CreateMissingDirs() {
+        string dirPath = Application.dataPath + "/../stickers";
+
+        if (!Directory.Exists(dirPath)) {
+            Debug.Log("Creating directory...");
+            Directory.CreateDirectory(dirPath);
         }
+    }
 
-        if (isOverridingParams) {
-            GUILayout.Label("");
+    public void PositionCamera() {
+        Debug.Log("Positioning camera...");
 
-            if (parameterOverrides.Count == 0) {
-                GUILayout.Label("No parameters found");
+        if (head == null) {
+            head = animator.GetBoneTransform(HumanBodyBones.Head);
+        }
+        
+        Vector3 cameraPosition = camera.transform.position;
+        camera.transform.position = new Vector3(cameraPosition.x, head.position.y + cameraOffset, cameraDistance);
+    }
+
+    void ApplyAnimatorController(AnimatorController newAnimatorController) {
+        animator.runtimeAnimatorController = newAnimatorController;
+    }
+
+    AnimatorController RemoveAnimatorTransitions(AnimatorController animatorController) {
+        List<AnimatorControllerLayer> newLayers = new List<AnimatorControllerLayer>();
+
+        for (var i = 0; i < animatorController.layers.Length; i++) {
+            var layer = animatorController.layers[i];
+
+            var stateMachine = layer.stateMachine;
+
+            var anyStateTransitions = stateMachine.anyStateTransitions;
+
+            for (var t = 0; t < anyStateTransitions.Length; t++) {
+                var transition = anyStateTransitions[t];
+                transition.duration = 0;
+                transition.hasExitTime = false;
+                transition.hasFixedDuration = true;
             }
 
-            foreach (ParameterOverride parameterOverride in parameterOverrides.ToList()) {
-                GUILayout.Label(parameterOverride.name + " => " + parameterOverride.value);
-                
-                if (GUILayout.Button("Delete", GUILayout.Width(100))) {
-                    DeleteParameterOverride(parameterOverride);
+            stateMachine.anyStateTransitions = anyStateTransitions;
+
+            var states = stateMachine.states;
+
+            for (var s = 0; s < states.Length; s++) {
+                var state = states[s].state;
+                var transitions = state.transitions;
+
+                for (var t = 0; t < transitions.Length; t++) {
+                    var transition = transitions[t];
+                    transition.duration = 0;
+                    transition.hasExitTime = false;
+                    transition.hasFixedDuration = true;
                 }
             }
 
-            GUILayout.Label("");
+            layer.stateMachine = stateMachine;
 
-            GUILayout.Label("Parameter name:");
-            newParameterOverrideName = EditorGUILayout.TextField(newParameterOverrideName);
-
-            GUILayout.Label("Parameter type (bool, string, float, int):");
-            newParameterOverrideType = EditorGUILayout.TextField(newParameterOverrideType);
-            
-            GUILayout.Label("Parameter value:");
-            newParameterOverrideValue = EditorGUILayout.TextField(newParameterOverrideValue);
-
-            if (GUILayout.Button("Add")) {
-                AddParameterOverride(newParameterOverrideName, newParameterOverrideType, newParameterOverrideValue);
-            }
-
-            GUILayout.Label("");
-
-            if (GUILayout.Button("Reset To Defaults")) {
-                ResetDefaultParameterOverrides();
-            }
+            newLayers.Add(layer);
         }
+        
+        animatorController.layers = newLayers.ToArray();
+
+        return animatorController;
     }
 
-    void ConfirmStickerCreation() {
-        hasConfirmed = true;
-
-        if (isCreatingSingleSticker) {
-            CreateSingleSticker();
-        } else {
-            CreateStickers();
-        }
-    }
-    
-    void ResetDefaultParameterOverrides() {
-        parameterOverrides = defaultParameterOverrides.ToList();
+    void OnApplicationQuit() {
+        hasStopped = true;
     }
 
-    void DeleteParameterOverride(ParameterOverride parameterOverride) {
-        parameterOverrides.Remove(parameterOverride);
+    void RotateMeshAroundHead(Vector3 axis, float angle) {
+        animator.transform.RotateAround(head.position, axis, angle);
     }
 
-    void AddParameterOverride(string name, string type, string value) {
-        ParameterOverride newParameterOverride = new ParameterOverride() {
-            name = name,
-            type = type,
-            value = value
-        };
-        parameterOverrides.Add(newParameterOverride);
-    }
-    
-    void ToggleOverrideParams() {
-        isOverridingParams = !isOverridingParams; 
+    void ResetMeshRotation(Vector3 axis, float angle) {
+        RotateMeshAroundHead(axis * -1, angle);
     }
 
-    void ToggleCreateSingleSticker() {
-        isCreatingSingleSticker = !isCreatingSingleSticker; 
+    Type GetType(string name) {
+        var result = (from assembly in AppDomain.CurrentDomain.GetAssemblies()
+            from type in assembly.GetTypes()
+            where type.Name == name
+            select type).FirstOrDefault();
+
+        return result;
     }
 
-    void EnterCreationMode() {
-        Debug.Log("Starting to create single sticker...");
-
-        hasStarted = false;
-        hasConfirmed = false;
-
-        EditorApplication.EnterPlaymode();
-    }
-
-    void FindHead() {
-        Transform match = vrcAvatar.GetComponentsInChildren<Transform>().Where(k => k.gameObject.name == "Head").FirstOrDefault();
-
-        if (match != null) {
-            head = match;
-        }
-    }
-
-    async void Update()
-    {
-        if (!EditorApplication.isPlaying)
-        {
+    void StripPhysBones() {
+        var type = GetType("VRCPhysBone");
+        
+        if (type == null) {
             return;
         }
 
-        // wait for deserialization
-        if (vrcAvatar == null || head == null || needsConfirmation == null)
-        {
+        Debug.Log("VRChat SDK (PhysBones) is loaded, stripping...");
+
+        var physBones = animator.transform.GetComponentsInChildren(type);
+
+        foreach (var physBone in physBones) {
+            Destroy(physBone);
+        }
+    }
+
+    void StripDynamicBones() {
+        var type = GetType("DynamicBone");
+
+        if (type == null) {
             return;
         }
+        
+        Debug.Log("DynamicBone is loaded, stripping...");
 
-        if (!hasStarted)
-        {
-            hasStarted = true;
+        var components = animator.transform.GetComponentsInChildren(type);
 
-            PrepareForCreation();
+        foreach (var component in components) {
+            Destroy(component);
+        }
+    }
 
-            Debug.Log(needsConfirmation);
-            Debug.Log(hasConfirmed);
+    void PrepareAvatar() {
+        if (stripDynamicBones) {
+            StripPhysBones();
+            StripDynamicBones();
+        }
+    }
 
-            if (needsConfirmation == true && !hasConfirmed) {
+    async void Begin() {
+        Debug.Log("Begin!");
+
+        CreateMissingDirs();
+
+        PrepareAvatar();
+
+        if (hideBody) {
+            ScaleAvatar();
+        }
+
+        var newAnimatorController = MergeAnimatorControllers(animatorControllers);
+
+        newAnimatorController = RemoveAnimatorTransitions(newAnimatorController);
+
+        ApplyAnimatorController(newAnimatorController);
+
+        await Task.Delay(100);
+
+        if (repositionCamera) {
+            PositionCamera();
+        }
+
+        // if we don't do this here then all images come out super dark
+        RenderTexture renderTexture = new RenderTexture(1024, 1024, 24);
+        camera.targetTexture = renderTexture;
+
+        var prefix = "";
+
+        for (var i = 0; i < parameterSettings.Length; i++) {
+            if (hasStopped) {
                 return;
-            } else {
-                if (isCreatingSingleSticker) {
-                    CreateSingleSticker();
-                } else {
-                    CreateStickers();
-                }
+            }
+
+            var setting = parameterSettings[i];
+
+            switch (setting.type) {
+                case ParameterTypes.Int:
+                    animator.SetInteger(setting.name, setting.intValue);
+                    break;
+                case ParameterTypes.Float:
+                    animator.SetFloat(setting.name, setting.floatValue);
+                    break;
+                case ParameterTypes.Bool:
+                    animator.SetBool(setting.name, setting.boolValue);
+                    break;
             }
         }
-    }
-
-    void OnDrawGizmos() {
-        DrawDebug();
-    }
-
-    void DrawDebug() {
-        SkinnedMeshRenderer [] skinnedMeshRenderers = GameObject.FindObjectsOfType<SkinnedMeshRenderer>();
-
-        // Debug.Log("Found " + skinnedMeshRenderers + " skinned mesh renderers");
-
-        foreach (SkinnedMeshRenderer skinnedMeshRenderer in skinnedMeshRenderers) {
-            Mesh mesh = new Mesh(); 
-
-            skinnedMeshRenderer.BakeMesh(mesh);
-
-            Vector3[] vertices = mesh.vertices;
-
-            // Debug.Log(vertices.Length);
-
-            for (int i = 0; i < vertices.Length; i++) {
-                // Gizmos.color = Color.yellow;
-                // Gizmos.DrawSphere(vertices[i], 0.1f);
-
-                if (i > 0) {
-                    Handles.DrawLine(vertices[i], vertices[i - 1]);
-                }
-            }
-        }
-    }
-
-    void StartPreview() {
-        isPreviewing = true;
-        SetLighting();
-        ScaleAvatar();
-        CreateCamera();
-        AddDebugging();
-        FocusOnCamera();
-        FocusCameraOnAvatar();
-    }
-
-    void AddDebugging() {
-        camera.gameObject.AddComponent<DebugVRCAvatarStickerGenerator>();
-    }
-
-    void StopPreview() {
-        isPreviewing = false;
-        RevertLighting();
-        RevertAvatarScale();
-        StopFocusingOnCamera();
-        RemoveCamera();
-    }
-
-    void FocusOnCamera() {
-        // allCameras returns all ENABLED cameras so when we disable them all we will lose them
-        allCameras = Camera.allCameras;
-
-        foreach (Camera cameraItem in allCameras) {
-            cameraItem.enabled = false;
-        }
-
-        camera.enabled = true;
-
-        Selection.activeGameObject = camera.gameObject;
-    }
-
-    void StopFocusingOnCamera() {
-        foreach (Camera cameraItem in allCameras) {
-            cameraItem.enabled = true;
-        }
-    }
-
-    async void PrepareForCreation() {
-        CreateFolders();
-
-        SetLighting();
-
-        ScaleAvatar();
-
-        CreateFinalAnimatorController();
-
-        AddAnimators();
-
-        AddFinalAnimatorControllerToAvatar();
-
-        await WaitForAnimatorToApply();
-
-        CreateCamera();
         
-        AddDebugging();
-    }
+        await ProcessGestures(prefix);
 
-    async void CreateSingleSticker()
-    {
-        if (selectedGestureLeft == null || selectedGestureRight == null) {
-            Debug.Log("Cannot create single sticker without left and right!");
+        if (hideBody) {
+            RevertAvatarScale();
+        }
+
+        if (hasStopped) {
             return;
         }
 
-        CreateStickers(selectedGestureLeft, selectedGestureRight);
-    }
-
-    async void CreateStickers(Gestures? gestureLeft = null, Gestures? gestureRight = null)
-    {
-        Debug.Log("Creating stickers...");
-    
-        if (gestureLeft != null && gestureRight != null) {
-            await ActuallyCreateSingleSticker((Gestures)gestureLeft, (Gestures)gestureRight);
-        } else {
-            await ActuallyCreateAllStickers();
+        if (addBorder) {
+            ProcessAllImages();
         }
 
-        Debug.Log("Stickers have been created");
+        Debug.Log("Done!");
 
-        StopPlaying();
-
-        ProcessAllImages();
+        if (stopPlayingAtEnd) {
+            UnityEditor.EditorApplication.isPlaying = false;
+        }
     }
 
-    void StopPlaying() {
-        EditorApplication.isPlaying = false;
+    void ResetParameters() {
+        for (var i = 0; i < animator.parameters.Length; i++) {
+            var parameter = animator.parameters[i];
+
+            switch (parameter.type) {
+                case AnimatorControllerParameterType.Bool:
+                    animator.SetBool(parameter.name, parameter.defaultBool);
+                    break;
+                case AnimatorControllerParameterType.Float:
+                    animator.SetFloat(parameter.name, parameter.defaultFloat);
+                    break;
+                case AnimatorControllerParameterType.Int:
+                    animator.SetInteger(parameter.name, parameter.defaultInt);
+                    break;
+            }
+        }
     }
 
-    void SetLighting() {
-        originalReflectionIntensity = RenderSettings.reflectionIntensity;
-        RenderSettings.reflectionIntensity = 0;
+    float GetRandomFloat(float min, float max) {
+        double range = max - min;
+        double sample = random.NextDouble();
+        double scaled = (sample * range) + min;
+        float f = (float)scaled;
+        return f;
     }
     
-    void RevertLighting() {
-        if (originalReflectionIntensity != null) {
-            return;
-        }
-        RenderSettings.reflectionIntensity = originalReflectionIntensity;
+    void CleanupAvatar() {
+        animator.transform.position = new Vector3(0, 0, 0);
+        animator.transform.rotation = Quaternion.Euler(0, 0, 0);
     }
 
     void ScaleAvatar() {
-        Transform armature = vrcAvatar.transform.Find("Armature");
+        originalArmatureScale = armatureToHide.transform.localScale;
 
-        originalArmatureScale = armature.transform.localScale;
-
-        armature.transform.localScale = new Vector3(0.0001f, 0.0001f, 0.0001f);
+        armatureToHide.transform.localScale = new Vector3(0.0001f, 0.0001f, 0.0001f);
 
         originalHeadScale = head.transform.localScale;
 
@@ -530,496 +353,142 @@ public class VRCAvatarStickerGenerator : EditorWindow
         if (originalArmatureScale == null) {
             return;
         }
-        vrcAvatar.transform.Find("Armature").transform.localScale = originalArmatureScale;
+        armatureToHide.transform.localScale = originalArmatureScale;
         head.transform.localScale = originalHeadScale;
     }
 
-    void CreateFolders() {
-        pathToStickersFolder = Path.GetDirectoryName(Application.dataPath) + "/Stickers";
-        
-        if (!Directory.Exists(pathToStickersFolder)) {
-            Debug.Log("Creating directory...");
-            Directory.CreateDirectory(pathToStickersFolder);
-            Debug.Log("Done");
+    public void AutoDetectAnimators() {
+        #if VRC_SDK_VRCSDK3
+        var type = GetType("VRCAvatarDescriptor");
+
+        if (type == null) {
+            Debug.Log("VRC SDK is not loaded");
+            return;
         }
+
+        var component = animator.transform.GetComponent<VRCAvatarDescriptor>();
+
+        var newAnimatorControllers = new List<AnimatorController>();
+
+        for (var i = 0; i < component.baseAnimationLayers.Length; i++) {
+            var baseAnimationLayer = component.baseAnimationLayers[i];
+            var animatorController = baseAnimationLayer.animatorController as AnimatorController;
+
+            if (animatorController != null) {
+                newAnimatorControllers.Add(animatorController);
+            }
+        }
+
+        animatorControllers = newAnimatorControllers.ToArray();
+        #endif
     }
 
-    void ReplaceAnimator() {
-        Animator animator = vrcAvatar.GetComponent<Animator>();
-        animator.runtimeAnimatorController = null;
-        AddFinalAnimatorControllerToAvatar();
-    }
+    // void RotateEyesToLookAtCamera() {
+    //     if (eyeLeft == null || eyeRight == null) {
+    //         return;
+    //     }
 
-    string GetFileNameForGestures(Gestures gestureLeft, Gestures gestureRight) {
-        return "left_" + Enum.GetName(typeof (Gestures), gestureLeft) + "_right_" + Enum.GetName(typeof (Gestures), gestureRight);
-    }
+    //     eyeLeft.LookAt(camera.transform.position);
+    //     eyeRight.LookAt(camera.transform.position);
+    // }
 
-    async Task ActuallyCreateSingleSticker(Gestures gestureLeft, Gestures gestureRight) {
-        // the only guaranteed way to make sure gestures do not do weird behavior to each other
-        ReplaceAnimator();
+    // void ResetEyeRotation() {
+    //     if (eyeLeft == null || eyeRight == null) {
+    //         return;
+    //     }
 
-        Animator animator = vrcAvatar.GetComponent<Animator>();
+    //     eyeLeft.rotation = Quaternion.Euler(0, 0, 0);
+    //     eyeRight.rotation = Quaternion.Euler(0, 0, 0);
+    // }
 
-        animator.SetInteger("GestureLeft", (int)gestureLeft);
-        animator.SetInteger("GestureRight", (int)gestureRight);
-
-        await WaitForGestureToApply();
-
-        string filename = GetFileNameForGestures(gestureLeft, gestureRight);
-        
-        Debug.Log(filename);
-
-        FocusCameraOnAvatar();
-        
-        await WaitForGestureToApply();
-
-        CreateStickerUsingCamera(filename);
-    }
-
-    async Task ActuallyCreateAllStickers() {
-        int leftHandValue = 0;
-        int rightHandValue = 0;
-
-        string workingOn = "LeftHand";
-
-        List<string> completedFilenames = new List<string>();
-
-        for (int i = 0; i < 64; i++) {
-            // catch weird case where it keeps going even after exit play mode
-            if (!EditorApplication.isPlaying)
-            {
+    async Task ProcessGestures(string prefix) {
+        for (int gestureLeftIdx = 0; gestureLeftIdx < 8; gestureLeftIdx++) {
+            if (hasStopped) {
+                CleanupAvatar();
                 return;
             }
 
-            // the only guaranteed way to make sure gestures do not do weird behavior to each other
-            ReplaceAnimator();
+            Debug.Log("Gesture Left " + gestureLeftIdx);
 
-            Animator animator = vrcAvatar.GetComponent<Animator>();
+            animator.SetInteger("GestureLeft", gestureLeftIdx);
 
-            animator.SetInteger("GestureLeft", leftHandValue);
-            animator.SetInteger("GestureRight", rightHandValue);
-
-            await WaitForGestureToApply();
-
-            string filename = GetFileNameForGestures((Gestures)leftHandValue, (Gestures)rightHandValue);
-
-            Debug.Log(filename);
-
-            FocusCameraOnAvatar();
-            
-            await WaitForGestureToApply();
-
-            CreateStickerUsingCamera(filename);
-
-            if (completedFilenames.Exists(item => item == filename)) {
-                Debug.Log("Filename " + filename + " already exists!");
-            }
-
-            completedFilenames.Add(filename);
-
-            if (workingOn == "LeftHand") {
-                if (leftHandValue < 7) {
-                    leftHandValue = leftHandValue + 1;
-                } else {
-                    workingOn = "LeftHandWithRight";
-                    leftHandValue = 0;
-                    rightHandValue = 0;
+            for (int gestureRightIdx = 0; gestureRightIdx < 8; gestureRightIdx++) {
+                if (hasStopped) {
+                    CleanupAvatar();
+                    return;
                 }
-            } else if (workingOn == "LeftHandWithRight") {
-                if (rightHandValue < 7) {
-                    rightHandValue = rightHandValue + 1;
-                } else if (leftHandValue < 7) {
-                    leftHandValue = leftHandValue + 1;
-                    rightHandValue = 0;
-                } else {
-                    workingOn = "RightHand";
-                    leftHandValue = 0;
-                    rightHandValue = 0;
+
+                Debug.Log("Gesture Right " + gestureRightIdx);
+                
+                animator.SetInteger("GestureRight", gestureRightIdx);
+
+                Vector3 rotationAxis = Vector3.up;
+                float rotationAngle = 0f;
+                
+                if (randomlyRotateVertically || randomlyRotateHorizontally) {
+                    rotationAxis = new Vector3(randomlyRotateVertically ? GetRandomFloat(-0.5f, 0.5f) : 0, randomlyRotateHorizontally ? GetRandomFloat(-0.5f, 0.5f) : 0, 0);
+                    rotationAngle = (float)random.Next(-20, 20);
+
+                    RotateMeshAroundHead(rotationAxis, rotationAngle);
                 }
-            } else if (workingOn == "RightHand") {
-                if (rightHandValue < 7) {
-                    rightHandValue = rightHandValue + 1;
-                } else {
-                    workingOn = "RightHandWithLeft";
-                    leftHandValue = 0;
-                    rightHandValue = 0;
+
+                // if (lookAtCamera) {
+                //     RotateEyesToLookAtCamera();
+                // }
+
+                await Task.Delay(transitionDelay);
+
+                CameraToPng(prefix, gestureLeftIdx, gestureRightIdx);
+                
+                if (randomlyRotateVertically || randomlyRotateHorizontally) {
+                    ResetMeshRotation(rotationAxis, rotationAngle);
                 }
-            } else if (workingOn == "RightHandWithLeft") {
-                if (leftHandValue < 7) {
-                    leftHandValue = leftHandValue + 1;
-                } else if (rightHandValue < 7) {
-                    rightHandValue = rightHandValue + 1;
-                    leftHandValue = 0;
-                } else {
-                    // done
-                }
+
+                // if (lookAtCamera) {
+                //     ResetEyeRotation();
+                // }
             }
         }
-    }
-
-    async Task WaitForAnimatorToApply() {
-        await Task.Delay(1000);
-    }
-
-    async Task WaitForGestureToApply() {
-        await Task.Delay(1000);
-    }
-
-    void CreateCamera()
-    {
-        Debug.Log("Creating camera...");
-
-        cameraObject = new GameObject("StickerCam");
-
-        // position
-        Vector3 headPosition = GetHeadPosition();
-        cameraObject.transform.position = new Vector3(headPosition.x, headPosition.y, headPosition.z + distanceFromHead);
-        cameraObject.transform.LookAt(headPosition);
-        cameraObject.transform.position = new Vector3(cameraObject.transform.position.x, cameraObject.transform.position.y + headOffset, cameraObject.transform.position.z);
-
-        camera = cameraObject.AddComponent<Camera>();
-        camera.nearClipPlane = 0.01f; // 0 will break camera!
-        camera.clearFlags = CameraClearFlags.SolidColor;
-        camera.backgroundColor = new Color(0, 0, 0, 0);
-
-        RenderTexture renderTexture = new RenderTexture(pixelWidth, pixelWidth, 24);
-        camera.targetTexture = renderTexture;
         
-        Debug.Log("Camera created");
     }
 
-    void RemoveCamera() {
-        if (cameraObject == null) {
-            return;
-        }
-        DestroyImmediate(cameraObject);
-    }
-
-    void CreateStickerUsingCamera(string filenameWithoutExt) {
-        // catch end play mode
-        if (camera == null) {
+    void CameraToPng(string prefix, int gestureLeftIdx, int gestureRightIdx) {
+        if (hasStopped) {
             return;
         }
 
-        RenderTexture currentRT = RenderTexture.active;
+        RenderTexture activeRenderTexture = RenderTexture.active;
         RenderTexture.active = camera.targetTexture;
  
-        Texture2D Image = new Texture2D(camera.targetTexture.width, camera.targetTexture.height);
-        Image.ReadPixels(new Rect(0, 0, camera.targetTexture.width, camera.targetTexture.height), 0, 0);
-        Image.Apply();
-        RenderTexture.active = currentRT;
+        camera.Render();
  
-        var Bytes = Image.EncodeToPNG();
-        Destroy(Image);
+        Texture2D texture2d = new Texture2D(camera.targetTexture.width, camera.targetTexture.height);
+        texture2d.ReadPixels(new Rect(0, 0, camera.targetTexture.width, camera.targetTexture.height), 0, 0);
+        texture2d.Apply();
+
+        RenderTexture.active = activeRenderTexture;
  
-        File.WriteAllBytes(pathToStickersFolder + "/" + filenameWithoutExt + ".png", Bytes);
-    }
+        var bytes = texture2d.EncodeToPNG();
 
-    Bounds GetBoundsFromMesh(Mesh mesh) {
-        Vector3 center = new Vector3(0, 0, 0);
+        string dirPath = Application.dataPath + "/../stickers";
+        string fileName = (prefix != "" ? prefix + "_" : "") + gestureLeftIdx + "_" + gestureRightIdx + ".png";
+        string filePath =  dirPath + "/" + fileName;
 
-        Quaternion newRotation = new Quaternion();
-        newRotation.eulerAngles = new Vector3(-90, 0, 0);
+        Debug.Log(filePath);
 
-        Vector3 min = Vector3.positiveInfinity;
-        Vector3 max = Vector3.negativeInfinity;
-
-        Vector3[] vertices = mesh.vertices;
-
-        for (int i = 0; i < vertices.Length; i++) {
-            Vector3 verticePosition = newRotation * (vertices[i] - center) + center;
-
-            min = Vector3.Min(min, verticePosition);
-            max = Vector3.Max(max, verticePosition);
-        }
-
-        Bounds bounds = new Bounds();
-        bounds.SetMinMax(min, max);
-
-        return bounds;
-    }
-
-    void FocusCameraOnAvatar() {
-        // catch when we exit play mode
-        if (camera == null) {
-            return;
-        }
-
-        SkinnedMeshRenderer skinnedMeshRenderer = vrcAvatar.transform.Find("Body").gameObject.GetComponent<SkinnedMeshRenderer>();
-
-        Mesh mesh = new Mesh();
-        skinnedMeshRenderer.BakeMesh(mesh);
-
-        // Vector3[] vertices = mesh.vertices;
-        // Vector3 center = new Vector3(0, 0, 0);
-        // Quaternion newRotation = new Quaternion();
-        // newRotation.eulerAngles = new Vector3(-90, 0, 0);
-        
-        // for (int i = 0; i < vertices.Length; i++) {
-        //     vertices[i] = newRotation * (vertices[i] - center) + center;
-        // }
-
-        // mesh.vertices = vertices;
-
-        // GameObject tempObject = new GameObject("TempMesh");
-        // tempObject.AddComponent<MeshRenderer>();
-        // MeshFilter meshFilter = tempObject.AddComponent<MeshFilter>();
-        // meshFilter.mesh = mesh;
-
-        // tempObject.transform.position = new Vector3(0, 0, 0);
-
-        Bounds bounds = GetBoundsFromMesh(mesh);
-
-        // Vector3 xyz = bounds.size;
-        // float distance = Mathf.Max(xyz.x, xyz.y, xyz.z);
-        // distance /= (2.0f * Mathf.Tan(0.5f * camera.fieldOfView * Mathf.Deg2Rad));
-        // camera.transform.position = new Vector3(camera.transform.position.x, camera.transform.position.y, distance - 0.25f);
-
-
-
-        float cameraDistance = distanceFromHead; // Constant factor
-Vector3 objectSizes = bounds.max - bounds.min;
-float objectSize = Mathf.Max(objectSizes.x, objectSizes.y, objectSizes.z);
-float cameraView = 2.0f * Mathf.Tan(0.5f * Mathf.Deg2Rad * camera.fieldOfView); // Visible height 1 meter in front
-float distance = cameraDistance * objectSize / cameraView; // Combined wanted distance from the object
-distance += 0.5f * objectSize; // Estimated offset from the center to the outside of the object
-camera.transform.position = bounds.center - distance * camera.transform.forward;
-camera.transform.position = new Vector3(camera.transform.position.x, camera.transform.position.y + headOffset, camera.transform.position.z);
-
-
-// camera.transform.position = vrcAvatar.transform.position * -(2 * bounds.size.y);
-
-
-        // Vector3 objectFrontCenter = bounds.center - tempObject.transform.forward * bounds.extents.z;
-
-        // //Get the far side of the triangle by going up from the center, at a 90 degree angle of the camera's forward vector.
-        // Vector3 triangleFarSideUpAxis = Quaternion.AngleAxis(90, tempObject.transform.right) * camera.transform.forward;
-        // //Calculate the up point of the triangle.
-        // const float MARGIN_MULTIPLIER = 2f;
-        // Vector3 triangleUpPoint = objectFrontCenter + triangleFarSideUpAxis * bounds.extents.y * MARGIN_MULTIPLIER;
-
-        // //The angle between the camera and the top point of the triangle is half the field of view.
-        // //The tangent of this angle equals the length of the opposing triangle side over the desired distance between the camera and the object's front.
-        // float desiredDistance = Vector3.Distance(triangleUpPoint, objectFrontCenter) / Mathf.Tan(Mathf.Deg2Rad * camera.fieldOfView / 2);
-
-        // camera.transform.position = -camera.transform.forward * desiredDistance + objectFrontCenter;
-    }
-
-    void AddFinalAnimatorControllerToAvatar()
-    {
-        Animator animator = vrcAvatar.GetComponent<Animator>();
-        animator.runtimeAnimatorController = finalAnimatorController;
-
-        foreach (ParameterOverride parameterOverride in parameterOverrides) {
-            Debug.Log("Setting param " + parameterOverride.name + " to " + parameterOverride.value);
-
-            switch (parameterOverride.type) {
-                case "bool":
-                    animator.SetBool(parameterOverride.name, bool.Parse(parameterOverride.value));
-                    break;
-                case "int":
-                    animator.SetInteger(parameterOverride.name, Int32.Parse(parameterOverride.value));
-                    break;
-                case "float":
-                    animator.SetFloat(parameterOverride.name, float.Parse(parameterOverride.value));
-                    break;
-            }
-        }
-    }
-
-    void CreateFinalAnimatorController()
-    {
-        finalAnimatorController = new AnimatorController();
-    }
-
-    Vector3 GetHeadPosition()
-    {
-        return head.transform.position;
-    }
-
-    VRCAvatarDescriptor GetAvatarDescriptor()
-    {
-        return vrcAvatar.GetComponent<VRCAvatarDescriptor>();
-    }
-
-    AnimatorController[] GetAnimatorControllersForAvatar()
-    {
-        VRCAvatarDescriptor.CustomAnimLayer[] customAnimLayers =
-            GetAvatarDescriptor().baseAnimationLayers;
-
-        AnimatorController[] animatorControllers =
-            new AnimatorController[customAnimLayers.Length];
-
-        for (int i = 0; i < customAnimLayers.Length; i++)
-        {
-            animatorControllers[i] =
-                customAnimLayers[i].animatorController as AnimatorController;
-        }
-
-        return animatorControllers;
-    }
-
-    void AddAnimators()
-    {
-        AnimatorController[] animatorControllers =
-            GetAnimatorControllersForAvatar();
-
-        Debug
-            .Log("Found " +
-            animatorControllers.Length +
-            " animator controllers on VRC avatar");
-
-        for (int i = 0; i < animatorControllers.Length; i++)
-        {
-            // if user has not specified one
-            if (animatorControllers[i] == null)
-            {
-                continue;
-            }
-
-            AddAnimator(animatorControllers[i]);
-        }
-    }
-
-    GameObject GetRootGameObjectForAvatar()
-    {
-        return vrcAvatar.gameObject;
-    }
-
-    void MergeVrcAnimatorIntoFinalAnimatorController(
-        AnimatorController animatorToMerge
-    )
-    {
-        Debug.Log("Merging vrc animator \"" + animatorToMerge.name + "\"...");
-
-        // // we modify everything in place so we don't want to mutate the original
-        // AnimatorController animatorToMerge = CopyVrcAnimatorForMerge(originalAnimatorController);
-        AnimatorControllerParameter[] existingParams =
-            finalAnimatorController.parameters;
-        AnimatorControllerParameter[] newParams = animatorToMerge.parameters;
-
-        Debug.Log("Found " + newParams.Length + " parameters in this animator");
-
-        // for (int p = 0; p < newParams.Length; p++)
-        // {
-        //     newParams[p].type = AnimatorControllerParameterType.Float;
-        // }
-        finalAnimatorController.parameters =
-            GetParametersWithoutDupes(newParams, existingParams);
-
-        AnimatorControllerLayer[] existingLayers =
-            finalAnimatorController.layers;
-
-        AnimatorControllerLayer[] layersToMerge = animatorToMerge.layers;
-
-        Debug.Log("Found " + layersToMerge.Length + " layers to merge");
-
-        // CVR breaks if any layer names are the same
-        layersToMerge = FixDuplicateLayerNames(layersToMerge, existingLayers);
-
-        AnimatorControllerLayer[] newLayers =
-            new AnimatorControllerLayer[existingLayers.Length +
-            layersToMerge.Length];
-
-        int newLayersIdx = 0;
-
-        for (int i = 0; i < existingLayers.Length; i++)
-        {
-            newLayers[newLayersIdx] = existingLayers[i];
-            newLayersIdx++;
-        }
-
-        for (int i = 0; i < layersToMerge.Length; i++)
-        {
-            AnimatorControllerLayer layer = layersToMerge[i];
-
-            Debug
-                .Log("Layer \"" +
-                layer.name +
-                "\" with " +
-                layer.stateMachine.states.Length +
-                " states");
-
-            // ProcessStateMachine(layer.stateMachine);
-            newLayers[newLayersIdx] = layer;
-            newLayersIdx++;
-        }
-
-        finalAnimatorController.layers = newLayers;
-
-        Debug.Log("Merged");
-    }
-
-    AnimatorControllerLayer[]
-    FixDuplicateLayerNames(
-        AnimatorControllerLayer[] newLayers,
-        AnimatorControllerLayer[] existingLayers
-    )
-    {
-        foreach (AnimatorControllerLayer newLayer in newLayers)
-        {
-            foreach (AnimatorControllerLayer existingLayer in existingLayers)
-            {
-                if (existingLayer.name == newLayer.name)
-                {
-                    Debug
-                        .Log("Layer \"" +
-                        newLayer.name +
-                        "\" clashes with an existing layer, renaming...");
-
-                    // TODO: This is fragile cause they could have another layer with the same name
-                    // Maybe check again if it exists whenever we rename it
-                    newLayer.name = newLayer.name + "_1";
-                }
-            }
-        }
-
-        return newLayers;
-    }
-
-    AnimatorControllerParameter[]
-    GetParametersWithoutDupes(
-        AnimatorControllerParameter[] newParams,
-        AnimatorControllerParameter[] existingParams
-    )
-    {
-        List<AnimatorControllerParameter> finalParams =
-            new List<AnimatorControllerParameter>(existingParams);
-
-        for (int x = 0; x < newParams.Length; x++)
-        {
-            bool doesAlreadyExist = false;
-
-            for (int y = 0; y < existingParams.Length; y++)
-            {
-                if (existingParams[y].name == newParams[x].name)
-                {
-                    doesAlreadyExist = true;
-                }
-            }
-
-            //  Debug.Log("WITHOUT DUPE: " + newParams[x].name + " yes? " + (doesAlreadyExist == true ? "EXISTS" : " NO EXISTS"));
-            if (doesAlreadyExist == false)
-            {
-                finalParams.Add(newParams[x]);
-            }
-        }
-
-        return finalParams.ToArray();
-    }
-
-    void AddAnimator(AnimatorController animatorControllerToAdd)
-    {
-        Debug.Log("Adding " + animatorControllerToAdd.name + " to avatar...");
-
-        MergeVrcAnimatorIntoFinalAnimatorController (animatorControllerToAdd);
+        File.WriteAllBytes(filePath, bytes);
     }
 
     void ProcessAllImages() {
         Debug.Log("Processing all images...");
 
-        string globToImages = pathToStickersFolder + "\\*.png";
-        string outputPath = pathToStickersFolder + "\\output";
+        string globToImages = Application.dataPath + "/../stickers/*.png";
+        string outputPath = Application.dataPath + "/../stickers/output";
+
+        if (!Directory.Exists(outputPath)) {
+            Debug.Log("Creating output directory...");
+            Directory.CreateDirectory(outputPath);
+        }
 
         string fileName = Application.dataPath.Replace("/", "\\") + "\\PeanutTools\\VRC_Avatar_Sticker_Generator\\bin\\ImageMagick\\magick.exe";
         string args = "mogrify -path \"" + outputPath + "\" -bordercolor none -border 2 -background white -alpha background -channel A -blur 0x2 -level 0,0% -trim +repage -resize 512x512 \"" + globToImages + "\"";

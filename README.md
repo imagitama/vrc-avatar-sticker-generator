@@ -1,37 +1,41 @@
 # VRC Avatar Sticker Generator
 
-Generates Telegram stickers from a VRChat avatar:
+Generates Telegram stickers from a VRChat (or ChilloutVR) avatar. It loops through each hand gesture and plays the animation on your avatar and outputs a 512x512 transparent sticker with a white outline.
 
-<img src="assets/example.png">
+<img src="screenshots/output.png" width="500px" />
 
-I made some packs to show it off: 
-
-- [https://t.me/addstickers/CanisWoof](https://t.me/addstickers/CanisWoof)
-- [https://t.me/addstickers/ShibaInuVRC](https://t.me/addstickers/ShibaInuVRC) (ImageMagick'd)
-- [https://t.me/addstickers/AwtterVRC](https://t.me/addstickers/AwtterVRC) (ImageMagick'd)
+Tested in Unity 2019.4.31f1 on Windows 10 with the Canis Woof by Rezillo Ryker.
 
 ## Usage
 
-1. Drop this folder into your Assets in your Unity project.
-2. Go to PeanutTools -> VRC Avatar Sticker Generator.
-3. Fill out the form.
-4. Click "Create Stickers". Unity will go into Play Mode and will output to a Stickers folder (root of project).
+1. Import the `.unitypackage` into your Unity project
+2. Create a new scene
+3. Add the prefab `PeanutTools/VRC_Avatar_Sticker_Generator/Sticker_Generator.prefab` and configure the settings:
+
+- drag your VRChat avatar (or whatever Animator) into the Animator slot
+- set the armature to hide (if you want this)
+- in the animators list add in your FX, gestures, etc.
+
+4. Enter play mode
+
+Your stickers will be outputted to a new folder called "stickers" in the root of your project.
 
 ## FAQ
 
-### How do I show body accessories?
+### How do I change the camera, lighting, etc.?
 
-Your armature is hidden so just copy the object from the armature and have it float there so the camera can see it.
+Everything is in the prefab. Change it as much as you like.
 
-### How do I change the lighting / camera effects?
+### How do I show accessories if my body is hidden?
 
-You can tweak the scene lighting except the reflections and camera are hardcoded for now.
+Move them to the head bone.
 
-## How it works
+## Ideas
 
-1. Adds a simple white outline to all renderers in the scene
-2. Shrinks everything in the armature except for the head
-3. Takes all of the animator controllers from the `VRC Avatar Descriptor`, flattens them, adds them to avatar 
-4. For each gesture combination it sets the animator parameter
-5. Exports as a PNG
-6. Outline and resizing done by ImageMagick (included)
+- make eyes look at the camera
+- detect animators from VRC component
+- detect parameters
+- list of accessories not to shrink
+- customise border width
+- customise rotation amounts
+- better UI
