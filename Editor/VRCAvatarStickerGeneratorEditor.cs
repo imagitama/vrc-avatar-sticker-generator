@@ -27,23 +27,140 @@ public class VRCAvatarStickerGeneratorEditor : Editor
 
     public override void OnInspectorGUI()
     {
-        base.OnInspectorGUI();
+        CustomGUI.BoldLabel("VRC Avatar Sticker Generator");
+        GUILayout.Label("Generates Telegram stickers from a VRChat (or ChilloutVR) avatar.");
 
-        serializedObject.Update();
+        CustomGUI.SmallLineGap();
+
+        CustomGUI.BoldLabel("Step 1: Enter required info");
+        
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("camera"), new GUIContent("Camera"));
+        CustomGUI.ItalicLabel("The camera to use for each sticker. The render texture will be replaced.");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("head"), new GUIContent("Head"));
+        CustomGUI.ItalicLabel("The head of your avatar. Used to re-position the camera and when hiding the body.");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("animator"), new GUIContent("Avatar Animator"));
+        CustomGUI.ItalicLabel("The animator for your avatar.");
+        CustomGUI.SmallLineGap();
 
         animatorsList.DoLayoutList();
+        CustomGUI.ItalicLabel("Each animator will be merged into a big one and override your provided animator.");
+        CustomGUI.SmallLineGap();
+
+        if (CustomGUI.StandardButton("Detect VRC Animators")) {
+            (target as VRCAvatarStickerGenerator).AutoDetectAnimators();
+            serializedObject.Update();
+            EditorUtility.SetDirty(target);
+        }
+        CustomGUI.ItalicLabel("Uses your avatar animator to detect your VRC Avatar Descriptor.");
+
+        CustomGUI.LineGap();
+        CustomGUI.BoldLabel("Step 2: Optional settings");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("repositionCamera"), new GUIContent("Re-position Camera"));
+        CustomGUI.ItalicLabel("If to move the camera at all");
+        
+        CustomGUI.LineGap();
+        CustomGUI.BoldLabel("Step 3: Configure parameters");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("cameraOffset"), new GUIContent("Camera Offset"));
+        CustomGUI.ItalicLabel("Applies a Y axis offset after positioning the camera at the head bone");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("disableTransitions"), new GUIContent("Disable Transitions"));
+        CustomGUI.ItalicLabel("Disables all state transitions in your animators");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("transitionDelay"), new GUIContent("Transition Delay (ms)"));
+        CustomGUI.ItalicLabel("The delay before taking a photo (useful if you do not disable transitions)");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("randomlyRotateVertically"), new GUIContent("Rotate Vertically"));
+        CustomGUI.ItalicLabel("If to rotate the head vertically with a random angle");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("randomlyRotateHorizontally"), new GUIContent("Rotate Horizontally"));
+        CustomGUI.ItalicLabel("If to rotate the head horizontally with a random angle");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("angleLimit"), new GUIContent("Angle Limit"));
+        CustomGUI.ItalicLabel("How much to rotate vertically or horizontally (eg. -20 to 20)");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("lookAtCamera"), new GUIContent("Look At Camera"));
+        CustomGUI.ItalicLabel("Make the eyes look at the camera (only useful if you randomly rotate the head)");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("eyeLeft"), new GUIContent("Left Eye"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("eyeRight"), new GUIContent("Right Eye"));
+
+        if (CustomGUI.StandardButton("Detect VRC Eyes")) {
+            (target as VRCAvatarStickerGenerator).AutoDetectVRCEyes();
+            serializedObject.Update();
+            EditorUtility.SetDirty(target);
+        }
+
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("stripDynamicBones"), new GUIContent("Strip DynamicBones"));
+        CustomGUI.ItalicLabel("DynamicBones (and VRChat PhysBones) take time to apply");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("stopPlayingAtEnd"), new GUIContent("Auto-Stop Playing"));
+        CustomGUI.ItalicLabel("If to automatically exit Play mode at the end");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("emptyDirectories"), new GUIContent("Empty Output"));
+        CustomGUI.ItalicLabel("If to empty the output folder before taking any photos");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("hideBody"), new GUIContent("Hide Body"));
+        CustomGUI.ItalicLabel("If to hide your avatar's body (by shrinking it to oblivion and making the head huge)");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("armatureToHide"), new GUIContent("Armature"));
+        CustomGUI.ItalicLabel("The body to hide (set it to your armature)");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("addBorder"), new GUIContent("Add Border"));
+        CustomGUI.ItalicLabel("If to use ImageMagick to add a white border around your stickers");
+        CustomGUI.SmallLineGap();
+        
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("borderWidth"), new GUIContent("Border Width"));
+        CustomGUI.ItalicLabel("The border width (pixels)");
+        CustomGUI.SmallLineGap();
+
         parameterSettingsList.DoLayoutList();
+        
+        CustomGUI.LineGap();
+        CustomGUI.BoldLabel("Step 4: Run");
+        CustomGUI.SmallLineGap();
+
+        GUILayout.Label("Enter play mode to generate stickers!");
+        CustomGUI.SmallLineGap();
+
+        if (CustomGUI.StandardButton("Open Output Folder")) {
+            (target as VRCAvatarStickerGenerator).OpenOutputFolder();
+        }
+
+        CustomGUI.SmallLineGap();
+        CustomGUI.BoldLabel("Debugging");
+        CustomGUI.SmallLineGap();
 
         if (CustomGUI.StandardButton("Reposition Camera")) {
             (target as VRCAvatarStickerGenerator).PositionCamera();
         }
 
-        if (CustomGUI.StandardButton("Detect VRC Animators")) {
-            (target as VRCAvatarStickerGenerator).AutoDetectAnimators();
-            // Repaint();
-            serializedObject.Update();
-            EditorUtility.SetDirty(target);
-        }
+        CustomGUI.LineGap();
+
+        CustomGUI.MyLinks("vrc-avatar-sticker-generator");
         
         serializedObject.ApplyModifiedProperties();
     }

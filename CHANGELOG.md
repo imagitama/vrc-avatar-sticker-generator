@@ -1,3 +1,13 @@
+# 1.1.0
+
+- new UI
+- eye look
+- remove camera distance setting
+- apply parameters after gestures
+- field: random angle limit (default 10)
+- field: border width (default 2px)
+- toggle: empty directories (default: on)
+
 # 1.0.0
 
 - rewrite from scratch

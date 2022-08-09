@@ -32,10 +32,5 @@ Move them to the head bone.
 
 ## Ideas
 
-- make eyes look at the camera
-- detect animators from VRC component
 - detect parameters
 - list of accessories not to shrink
-- customise border width
-- customise rotation amounts
-- better UI

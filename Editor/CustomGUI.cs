@@ -12,6 +12,7 @@ namespace PeanutTools_VRC_Avatar_Sticker_Generator_Editor {
         public static void LineGap() {
             EditorGUILayout.Space();
             EditorGUILayout.Space();
+            EditorGUILayout.Space();
         }
 
         public static void ItalicLabel(string text) {

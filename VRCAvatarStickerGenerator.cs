@@ -22,27 +22,34 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     [HideInInspector]
     public AnimatorController[] animatorControllers;
     public bool repositionCamera = true;
-    public float cameraDistance = 0.5f;
     public float cameraOffset = 0f;
+    public bool disableTransitions = true;
     public int transitionDelay = 100;
     [HideInInspector]
     public ParameterSetting[] parameterSettings = new ParameterSetting[0];
     public bool randomlyRotateVertically = true;
     public bool randomlyRotateHorizontally = true;
-    // public bool lookAtCamera = true;
-    // public Transform eyeLeft;
-    // public Transform eyeRight;
+    public int angleLimit = 10;
+    public bool lookAtCamera = true;
+    public Transform eyeLeft;
+    public Transform eyeRight;
     public bool stripDynamicBones = true;
     public bool stopPlayingAtEnd = true;
     public bool hideBody = true;
     public Transform armatureToHide;
     public bool addBorder = true;
+    public int borderWidth = 2;
+    public bool emptyDirectories = true;
 
     private bool done = false;
     private bool hasStopped = false;
     private System.Random random = new System.Random();
     private Vector3 originalArmatureScale;
     private Vector3 originalHeadScale;
+    private string rawOutputPath;
+    private string processedOutputPath;
+    private Quaternion originalLeftEyeRotation;
+    private Quaternion originalRightEyeRotation;
 
     public enum ParameterTypes {
         Float,
@@ -61,6 +68,9 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
 
     void Start()
     {
+        rawOutputPath = Application.dataPath + "/../stickers";
+        processedOutputPath = rawOutputPath + "/output";
+        
         if (camera == null) {
             throw new System.Exception("No camera");
         }
@@ -76,6 +86,19 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         if (hideBody && armatureToHide == null) {
             throw new System.Exception("No armature to hide");
         }
+
+        if (lookAtCamera) {
+            if (eyeLeft == null || eyeRight == null) {
+                throw new System.Exception("No left or right eye");
+            }
+
+            if (animator.avatar != null && animator.GetBoneTransform(HumanBodyBones.LeftEye) != null) {
+                throw new System.Exception("Found an avatar with left eye set (this breaks eye looking)");
+            }
+
+            originalLeftEyeRotation = eyeLeft.rotation;
+            originalRightEyeRotation = eyeRight.rotation;
+        }
     }
 
     void LateUpdate()
@@ -83,7 +106,7 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         if (!done) {
             Begin();
             done = true;
-        } 
+        }
     }
 
     AnimatorController MergeAnimatorControllers(AnimatorController[] animatorControllersToMerge) {
@@ -112,11 +135,14 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     }
 
     void CreateMissingDirs() {
-        string dirPath = Application.dataPath + "/../stickers";
+        if (!Directory.Exists(rawOutputPath)) {
+            Debug.Log("Creating output directory...");
+            Directory.CreateDirectory(rawOutputPath);
+        }
 
-        if (!Directory.Exists(dirPath)) {
-            Debug.Log("Creating directory...");
-            Directory.CreateDirectory(dirPath);
+        if (!Directory.Exists(processedOutputPath)) {
+            Debug.Log("Creating processed output directory...");
+            Directory.CreateDirectory(processedOutputPath);
         }
     }
 
@@ -126,9 +152,14 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         if (head == null) {
             head = animator.GetBoneTransform(HumanBodyBones.Head);
         }
+
+        // if no avatar
+        if (head == null) {
+            return;
+        }
         
         Vector3 cameraPosition = camera.transform.position;
-        camera.transform.position = new Vector3(cameraPosition.x, head.position.y + cameraOffset, cameraDistance);
+        camera.transform.position = new Vector3(cameraPosition.x, head.position.y + cameraOffset, cameraPosition.z);
     }
 
     void ApplyAnimatorController(AnimatorController newAnimatorController) {
@@ -238,8 +269,16 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         }
     }
 
+    void EmptyDirs() {
+        Directory.Delete(rawOutputPath, true);
+    }
+
     async void Begin() {
         Debug.Log("Begin!");
+
+        if (emptyDirectories) {
+            EmptyDirs();
+        }
 
         CreateMissingDirs();
 
@@ -251,7 +290,9 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
 
         var newAnimatorController = MergeAnimatorControllers(animatorControllers);
 
-        newAnimatorController = RemoveAnimatorTransitions(newAnimatorController);
+        if (disableTransitions) {
+            newAnimatorController = RemoveAnimatorTransitions(newAnimatorController);
+        }
 
         ApplyAnimatorController(newAnimatorController);
 
@@ -266,26 +307,6 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         camera.targetTexture = renderTexture;
 
         var prefix = "";
-
-        for (var i = 0; i < parameterSettings.Length; i++) {
-            if (hasStopped) {
-                return;
-            }
-
-            var setting = parameterSettings[i];
-
-            switch (setting.type) {
-                case ParameterTypes.Int:
-                    animator.SetInteger(setting.name, setting.intValue);
-                    break;
-                case ParameterTypes.Float:
-                    animator.SetFloat(setting.name, setting.floatValue);
-                    break;
-                case ParameterTypes.Bool:
-                    animator.SetBool(setting.name, setting.boolValue);
-                    break;
-            }
-        }
         
         await ProcessGestures(prefix);
 
@@ -382,24 +403,51 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         animatorControllers = newAnimatorControllers.ToArray();
         #endif
     }
+    
+    public void AutoDetectVRCEyes() {
+        #if VRC_SDK_VRCSDK3
+        var type = GetType("VRCAvatarDescriptor");
 
-    // void RotateEyesToLookAtCamera() {
-    //     if (eyeLeft == null || eyeRight == null) {
-    //         return;
-    //     }
+        if (type == null) {
+            Debug.Log("VRC SDK is not loaded");
+            return;
+        }
 
-    //     eyeLeft.LookAt(camera.transform.position);
-    //     eyeRight.LookAt(camera.transform.position);
-    // }
+        var component = animator.transform.GetComponent<VRCAvatarDescriptor>();
 
-    // void ResetEyeRotation() {
-    //     if (eyeLeft == null || eyeRight == null) {
-    //         return;
-    //     }
+        eyeLeft = component.customEyeLookSettings.leftEye;
+        eyeRight = component.customEyeLookSettings.rightEye;
+        #endif       
+    }
 
-    //     eyeLeft.rotation = Quaternion.Euler(0, 0, 0);
-    //     eyeRight.rotation = Quaternion.Euler(0, 0, 0);
-    // }
+    void RotateEyesToLookAtCamera() {
+        eyeLeft.LookAt(camera.transform.position);
+        eyeLeft.rotation *= originalLeftEyeRotation;
+        eyeRight.LookAt(camera.transform.position);
+        eyeRight.rotation *= originalRightEyeRotation;
+    }
+
+    void ApplyCustomParameters() {
+        if (hasStopped) {
+            return;
+        }
+
+        for (var i = 0; i < parameterSettings.Length; i++) {
+            var setting = parameterSettings[i];
+
+            switch (setting.type) {
+                case ParameterTypes.Int:
+                    animator.SetInteger(setting.name, setting.intValue);
+                    break;
+                case ParameterTypes.Float:
+                    animator.SetFloat(setting.name, setting.floatValue);
+                    break;
+                case ParameterTypes.Bool:
+                    animator.SetBool(setting.name, setting.boolValue);
+                    break;
+            }
+        }
+    }
 
     async Task ProcessGestures(string prefix) {
         for (int gestureLeftIdx = 0; gestureLeftIdx < 8; gestureLeftIdx++) {
@@ -422,19 +470,23 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
                 
                 animator.SetInteger("GestureRight", gestureRightIdx);
 
+                ApplyCustomParameters();
+
                 Vector3 rotationAxis = Vector3.up;
                 float rotationAngle = 0f;
                 
                 if (randomlyRotateVertically || randomlyRotateHorizontally) {
                     rotationAxis = new Vector3(randomlyRotateVertically ? GetRandomFloat(-0.5f, 0.5f) : 0, randomlyRotateHorizontally ? GetRandomFloat(-0.5f, 0.5f) : 0, 0);
-                    rotationAngle = (float)random.Next(-20, 20);
+                    rotationAngle = (float)random.Next(angleLimit * -1, angleLimit);
 
                     RotateMeshAroundHead(rotationAxis, rotationAngle);
                 }
+                
+                await Task.Delay(10);
 
-                // if (lookAtCamera) {
-                //     RotateEyesToLookAtCamera();
-                // }
+                if (lookAtCamera) {
+                    RotateEyesToLookAtCamera();
+                }
 
                 await Task.Delay(transitionDelay);
 
@@ -443,10 +495,6 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
                 if (randomlyRotateVertically || randomlyRotateHorizontally) {
                     ResetMeshRotation(rotationAxis, rotationAngle);
                 }
-
-                // if (lookAtCamera) {
-                //     ResetEyeRotation();
-                // }
             }
         }
         
@@ -470,9 +518,8 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
  
         var bytes = texture2d.EncodeToPNG();
 
-        string dirPath = Application.dataPath + "/../stickers";
         string fileName = (prefix != "" ? prefix + "_" : "") + gestureLeftIdx + "_" + gestureRightIdx + ".png";
-        string filePath =  dirPath + "/" + fileName;
+        string filePath =  rawOutputPath + "/" + fileName;
 
         Debug.Log(filePath);
 
@@ -482,16 +529,15 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     void ProcessAllImages() {
         Debug.Log("Processing all images...");
 
-        string globToImages = Application.dataPath + "/../stickers/*.png";
-        string outputPath = Application.dataPath + "/../stickers/output";
+        string globToImages = rawOutputPath + "/*.png";
 
-        if (!Directory.Exists(outputPath)) {
+        if (!Directory.Exists(processedOutputPath)) {
             Debug.Log("Creating output directory...");
-            Directory.CreateDirectory(outputPath);
+            Directory.CreateDirectory(processedOutputPath);
         }
 
         string fileName = Application.dataPath.Replace("/", "\\") + "\\PeanutTools\\VRC_Avatar_Sticker_Generator\\bin\\ImageMagick\\magick.exe";
-        string args = "mogrify -path \"" + outputPath + "\" -bordercolor none -border 2 -background white -alpha background -channel A -blur 0x2 -level 0,0% -trim +repage -resize 512x512 \"" + globToImages + "\"";
+        string args = "mogrify -path \"" + processedOutputPath + "\" -bordercolor none -border " + borderWidth.ToString() + " -background white -alpha background -channel A -blur 0x" + borderWidth.ToString() + " -level 0,0% -trim +repage -resize 512x512 \"" + globToImages + "\"";
 
         Debug.Log(fileName + " " + args);
 
@@ -500,5 +546,13 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         process.StartInfo.Arguments = args;
         process.Start();
         process.WaitForExit();
+    }
+
+    public void OpenOutputFolder() {
+        OpenInExplorer(processedOutputPath);
+    }
+
+    void OpenInExplorer(string pathToOpen) {
+        System.Diagnostics.Process.Start(pathToOpen);
     }
 }
