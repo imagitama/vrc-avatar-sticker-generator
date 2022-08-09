@@ -20,6 +20,7 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         parameterSettingsList.drawHeaderCallback = DrawParameterSettingsListHeader;
 
         animators = serializedObject.FindProperty("animatorControllers");
+
         animatorsList = new ReorderableList(serializedObject, animators, true, true, true, true);
         animatorsList.drawElementCallback = DrawAnimatorsListListItems;
         animatorsList.drawHeaderCallback = DrawAnimatorsListHeader;
@@ -37,19 +38,19 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         CustomGUI.SmallLineGap();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("camera"), new GUIContent("Camera"));
-        CustomGUI.ItalicLabel("The camera to use for each sticker. The render texture will be replaced.");
+        CustomGUI.ItalicLabel("The camera to use for each sticker (the render texture will be replaced)");
         CustomGUI.SmallLineGap();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("head"), new GUIContent("Head"));
-        CustomGUI.ItalicLabel("The head of your avatar. Used to re-position the camera and when hiding the body.");
+        CustomGUI.ItalicLabel("The head of your avatar (used to re-position the camera and when hiding the body)");
         CustomGUI.SmallLineGap();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("animator"), new GUIContent("Avatar Animator"));
-        CustomGUI.ItalicLabel("The animator for your avatar.");
+        CustomGUI.ItalicLabel("The animator for your avatar");
         CustomGUI.SmallLineGap();
 
         animatorsList.DoLayoutList();
-        CustomGUI.ItalicLabel("Each animator will be merged into a big one and override your provided animator.");
+        CustomGUI.ItalicLabel("Each animator will be merged together and will replace your avatar\'s animator");
         CustomGUI.SmallLineGap();
 
         if (CustomGUI.StandardButton("Detect VRC Animators")) {
@@ -65,11 +66,8 @@ public class VRCAvatarStickerGeneratorEditor : Editor
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("repositionCamera"), new GUIContent("Re-position Camera"));
         CustomGUI.ItalicLabel("If to move the camera at all");
-        
-        CustomGUI.LineGap();
-        CustomGUI.BoldLabel("Step 3: Configure parameters");
         CustomGUI.SmallLineGap();
-        
+
         EditorGUILayout.PropertyField(serializedObject.FindProperty("cameraOffset"), new GUIContent("Camera Offset"));
         CustomGUI.ItalicLabel("Applies a Y axis offset after positioning the camera at the head bone");
         CustomGUI.SmallLineGap();
@@ -137,6 +135,10 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         CustomGUI.ItalicLabel("The border width (pixels)");
         CustomGUI.SmallLineGap();
 
+        CustomGUI.LineGap();
+        CustomGUI.BoldLabel("Step 3: Configure parameters");
+        CustomGUI.SmallLineGap();
+
         parameterSettingsList.DoLayoutList();
         
         CustomGUI.LineGap();
@@ -157,6 +159,10 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         if (CustomGUI.StandardButton("Reposition Camera")) {
             (target as VRCAvatarStickerGenerator).PositionCamera();
         }
+
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("debugHideBody"), new GUIContent("Debug Hide Body"));
 
         CustomGUI.LineGap();
 

@@ -40,6 +40,7 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     public bool addBorder = true;
     public int borderWidth = 2;
     public bool emptyDirectories = true;
+    public bool debugHideBody = false;
 
     private bool done = false;
     private bool hasStopped = false;
@@ -101,8 +102,21 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         }
     }
 
+    void DebugHideBody() {
+        ScaleAvatar();
+    }
+
     void LateUpdate()
     {  
+        if (debugHideBody) {
+            DebugHideBody();
+
+            if (repositionCamera) {
+                PositionCamera();
+            }
+            return;
+        }
+
         if (!done) {
             Begin();
             done = true;

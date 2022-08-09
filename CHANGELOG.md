@@ -1,3 +1,8 @@
+# 1.2.0
+
+- added "debug hide body" flag
+- fixed UI headings
+
 # 1.1.0
 
 - new UI

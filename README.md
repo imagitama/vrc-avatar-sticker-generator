@@ -26,6 +26,10 @@ Your stickers will be outputted to a new folder called "stickers" in the root of
 
 Everything is in the prefab. Change it as much as you like.
 
+### How do I set the trigger amount?
+
+Add "GestureLeftWeight" and "GestureRightWeight" as floats and set them to 1.
+
 ### How do I show accessories if my body is hidden?
 
 Move them to the head bone.
@@ -34,3 +38,16 @@ Move them to the head bone.
 
 - detect parameters
 - list of accessories not to shrink
+
+## Avatars
+
+### Canis Woof
+
+View a pack I made: https://telegram.me/addstickers/CanisWoof
+
+- ortho camera:
+  - position: 0,1.8,1
+  - size: 0.3
+- head set to bone "Neck"
+- animators "Gestures" and "FX"
+- camera offset 0.15
