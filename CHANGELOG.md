@@ -1,3 +1,7 @@
+# 1.3.1
+
+- fixed a bug where original transitions were disabled
+
 # 1.3.0
 
 - fixed crash when trying to upload VRChat avatar (you now have to merge animators in Edit mode)

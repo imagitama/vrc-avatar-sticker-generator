@@ -37,16 +37,20 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         List<AnimatorControllerParameter> newParameters = new List<AnimatorControllerParameter>();
 
         for (var i = 0; i < animatorControllersToMerge.Length; i++) {
-            var layers = animatorControllersToMerge[i].layers;
+            var animatorController = (AnimatorController)Instantiate(animatorControllersToMerge[i]);
 
-            for (var l = 0; l < layers.Length; l++) {
-                newLayers.Add(layers[l]);
+            var layers = animatorController.layers;
+
+            for (var l = 0; l < animatorController.layers.Length; l++) {
+                var layer = animatorController.layers[l];
+                newLayers.Add(layer);
             }
 
-            var parameters = animatorControllersToMerge[i].parameters;
+            var parameters = animatorController.parameters;
 
             for (var p = 0; p < parameters.Length; p++) {
-                newParameters.Add(parameters[p]);
+                var parameter = parameters[p];
+                newParameters.Add(parameter);
             }
         }
 
@@ -94,30 +98,25 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         for (var i = 0; i < animatorController.layers.Length; i++) {
             var layer = animatorController.layers[i];
 
-            var stateMachine = layer.stateMachine;
+            var stateMachine = (AnimatorStateMachine)Instantiate(layer.stateMachine);
 
-            var anyStateTransitions = stateMachine.anyStateTransitions;
-
-            for (var t = 0; t < anyStateTransitions.Length; t++) {
-                var transition = anyStateTransitions[t];
+            for (var t = 0; t < stateMachine.anyStateTransitions.Length; t++) {
+                var transition = (AnimatorStateTransition)Instantiate(stateMachine.anyStateTransitions[t]);
                 transition.duration = 0;
                 transition.hasExitTime = false;
                 transition.hasFixedDuration = true;
+                stateMachine.anyStateTransitions[t] = transition;
             }
 
-            stateMachine.anyStateTransitions = anyStateTransitions;
+            for (var s = 0; s < stateMachine.states.Length; s++) {
+                var state = (AnimatorState)Instantiate(stateMachine.states[s].state);
 
-            var states = stateMachine.states;
-
-            for (var s = 0; s < states.Length; s++) {
-                var state = states[s].state;
-                var transitions = state.transitions;
-
-                for (var t = 0; t < transitions.Length; t++) {
-                    var transition = transitions[t];
+                for (var t = 0; t < state.transitions.Length; t++) {
+                    var transition = (AnimatorStateTransition)Instantiate(state.transitions[t]);
                     transition.duration = 0;
                     transition.hasExitTime = false;
                     transition.hasFixedDuration = true;
+                    state.transitions[t] = transition;
                 }
             }
 
