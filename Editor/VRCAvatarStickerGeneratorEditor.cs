@@ -1,67 +1,255 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEditor.Animations;
 using UnityEditor;
-using UnityEditorInternal;
 using PeanutTools_VRC_Avatar_Sticker_Generator_Editor;
 
 [CustomEditor(typeof(VRCAvatarStickerGenerator))]
 public class VRCAvatarStickerGeneratorEditor : Editor 
 {
     SerializedProperty parameterSettings;
-    ReorderableList parameterSettingsList;
+    UnityEditorInternal.ReorderableList parameterSettingsList;
 
     SerializedProperty animators;
-    ReorderableList animatorsList;
+    UnityEditorInternal.ReorderableList animatorsList;
 
-    private void OnEnable()
+    private void OnEnable() {
+        PrepareLists();
+    }
+
+    private void PrepareLists()
     {
         parameterSettings = serializedObject.FindProperty("parameterSettings");
-        parameterSettingsList = new ReorderableList(serializedObject, parameterSettings, true, true, true, true);
+        parameterSettingsList = new UnityEditorInternal.ReorderableList(serializedObject, parameterSettings, true, true, true, true);
         parameterSettingsList.drawElementCallback = DrawParameterSettingsListListItems;
         parameterSettingsList.drawHeaderCallback = DrawParameterSettingsListHeader;
 
         animators = serializedObject.FindProperty("animatorControllers");
 
-        animatorsList = new ReorderableList(serializedObject, animators, true, true, true, true);
+        animatorsList = new UnityEditorInternal.ReorderableList(serializedObject, animators, true, true, true, true);
         animatorsList.drawElementCallback = DrawAnimatorsListListItems;
         animatorsList.drawHeaderCallback = DrawAnimatorsListHeader;
     }
 
+    AnimatorController MergeAnimatorControllers(AnimatorController[] animatorControllersToMerge) {
+        var newAnimatorController = new AnimatorController();
+        List<AnimatorControllerLayer> newLayers = new List<AnimatorControllerLayer>();
+        List<AnimatorControllerParameter> newParameters = new List<AnimatorControllerParameter>();
+
+        for (var i = 0; i < animatorControllersToMerge.Length; i++) {
+            var layers = animatorControllersToMerge[i].layers;
+
+            for (var l = 0; l < layers.Length; l++) {
+                newLayers.Add(layers[l]);
+            }
+
+            var parameters = animatorControllersToMerge[i].parameters;
+
+            for (var p = 0; p < parameters.Length; p++) {
+                newParameters.Add(parameters[p]);
+            }
+        }
+
+        newAnimatorController.parameters = newParameters.ToArray();
+        newAnimatorController.layers = newLayers.ToArray();
+
+        return newAnimatorController;
+    }
+
+    void ApplyAnimators() {
+        var animatorControllersProperty = serializedObject.FindProperty("animatorControllers");
+        var size = animatorControllersProperty.arraySize;
+        var animatorControllers = new List<AnimatorController>();
+
+        for (var i = 0; i < size; i++) {
+            var arrayItemProperty = animatorControllersProperty.GetArrayElementAtIndex(i);
+            var animatorController = arrayItemProperty.objectReferenceValue as AnimatorController;
+            animatorControllers.Add(animatorController);
+        }
+
+        var newAnimatorController = MergeAnimatorControllers(animatorControllers.ToArray());
+
+        var disableTransitions = serializedObject.FindProperty("disableTransitions").boolValue;
+
+        if (disableTransitions) {
+            newAnimatorController = RemoveAnimatorTransitions(newAnimatorController);
+        }
+
+        ApplyAnimatorController(newAnimatorController);
+    }
+
+    void ApplyAnimatorController(AnimatorController newAnimatorController) {
+        var animator = serializedObject.FindProperty("animator").objectReferenceValue as Animator;
+
+        if (animator == null) {
+            throw new System.Exception("Cannot apply animator controller without a reference to an animator");
+        }
+
+        animator.runtimeAnimatorController = newAnimatorController;
+    }
+
+    AnimatorController RemoveAnimatorTransitions(AnimatorController animatorController) {
+        List<AnimatorControllerLayer> newLayers = new List<AnimatorControllerLayer>();
+
+        for (var i = 0; i < animatorController.layers.Length; i++) {
+            var layer = animatorController.layers[i];
+
+            var stateMachine = layer.stateMachine;
+
+            var anyStateTransitions = stateMachine.anyStateTransitions;
+
+            for (var t = 0; t < anyStateTransitions.Length; t++) {
+                var transition = anyStateTransitions[t];
+                transition.duration = 0;
+                transition.hasExitTime = false;
+                transition.hasFixedDuration = true;
+            }
+
+            stateMachine.anyStateTransitions = anyStateTransitions;
+
+            var states = stateMachine.states;
+
+            for (var s = 0; s < states.Length; s++) {
+                var state = states[s].state;
+                var transitions = state.transitions;
+
+                for (var t = 0; t < transitions.Length; t++) {
+                    var transition = transitions[t];
+                    transition.duration = 0;
+                    transition.hasExitTime = false;
+                    transition.hasFixedDuration = true;
+                }
+            }
+
+            layer.stateMachine = stateMachine;
+
+            newLayers.Add(layer);
+        }
+        
+        animatorController.layers = newLayers.ToArray();
+
+        return animatorController;
+    }
+
+    VRCAvatarStickerGenerator.ParameterTypes MapAnimatorControllerType(AnimatorControllerParameterType type) {
+            switch (type) {
+                case AnimatorControllerParameterType.Float:
+                    return VRCAvatarStickerGenerator.ParameterTypes.Float;
+                case AnimatorControllerParameterType.Int:
+                    return VRCAvatarStickerGenerator.ParameterTypes.Int;
+                case AnimatorControllerParameterType.Bool:
+                    return VRCAvatarStickerGenerator.ParameterTypes.Bool;
+                default:
+                    throw new System.Exception("Unknown type " + type.ToString());
+            }
+    }
+
+    public void PopulateParameters() {
+        var animator = serializedObject.FindProperty("animator").objectReferenceValue as Animator;
+
+        if (animator == null || animator.runtimeAnimatorController == null) {
+            throw new System.Exception("Cannot populate parameters without an animator and a controller");
+        }
+
+        var parameters = (animator.runtimeAnimatorController as AnimatorController).parameters;
+
+        Debug.Log("Found " + parameters.Length + " parameters");
+
+        var newParameterSettings = new List<VRCAvatarStickerGenerator.ParameterSetting>();
+
+        for (var i = 0; i < parameters.Length; i++) {
+            AnimatorControllerParameter parameter = parameters[i];
+
+            if (parameter.name == "GestureLeft" || parameter.name == "GestureRight" || newParameterSettings.Exists(p => p.name == parameter.name)) {
+                continue;
+            }
+
+            newParameterSettings.Add(new VRCAvatarStickerGenerator.ParameterSetting() {
+                name = parameter.name,
+                type = MapAnimatorControllerType(parameter.type),
+                boolValue = parameter.defaultBool,
+                intValue = parameter.defaultInt,
+                floatValue = parameter.defaultFloat,
+            });
+        }
+
+        (target as VRCAvatarStickerGenerator).parameterSettings = newParameterSettings.ToArray();
+    }
+
+    bool GetIsAnimatorWronglySet() {
+        return (serializedObject.FindProperty("animator").objectReferenceValue as Animator) != null && (serializedObject.FindProperty("animator").objectReferenceValue as Animator).runtimeAnimatorController != null && AssetDatabase.Contains((serializedObject.FindProperty("animator").objectReferenceValue as Animator).runtimeAnimatorController);
+    }
+
+    bool GetIsAnimatorSet() {
+        return (serializedObject.FindProperty("animator").objectReferenceValue as Animator) != null && (serializedObject.FindProperty("animator").objectReferenceValue as Animator).runtimeAnimatorController == null;
+    }
+
     public override void OnInspectorGUI()
     {
+         serializedObject.Update();
+
         CustomGUI.BoldLabel("VRC Avatar Sticker Generator");
         GUILayout.Label("Generates Telegram stickers from a VRChat (or ChilloutVR) avatar.");
 
         CustomGUI.SmallLineGap();
+        CustomGUI.LargeLabel("Step 1: Set up your camera");
+        CustomGUI.SmallLineGap();
 
-        CustomGUI.BoldLabel("Step 1: Enter required info");
-        
+        GUILayout.Label("Position your camera so that it is facing your avatar then set it below.");
         CustomGUI.SmallLineGap();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("camera"), new GUIContent("Camera"));
-        CustomGUI.ItalicLabel("The camera to use for each sticker (the render texture will be replaced)");
+        CustomGUI.ItalicLabel("Note that the render texture will automatically be replaced");
+        CustomGUI.SmallLineGap();
+
+        CustomGUI.LargeLabel("Step 2: Configure your avatar");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("animator"), new GUIContent("Avatar"));
+        CustomGUI.ItalicLabel("Your avatar must have an \"animator\" component on it");
         CustomGUI.SmallLineGap();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("head"), new GUIContent("Head"));
         CustomGUI.ItalicLabel("The head of your avatar (used to re-position the camera and when hiding the body)");
         CustomGUI.SmallLineGap();
+        
+        CustomGUI.LargeLabel("Step 3: Merge your animators");
+        CustomGUI.SmallLineGap();
 
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("animator"), new GUIContent("Avatar Animator"));
-        CustomGUI.ItalicLabel("The animator for your avatar");
+        CustomGUI.BoldLabel("You must merge your animators every time this list changes");
         CustomGUI.SmallLineGap();
 
         animatorsList.DoLayoutList();
-        CustomGUI.ItalicLabel("Each animator will be merged together and will replace your avatar\'s animator");
-        CustomGUI.SmallLineGap();
 
+        #if VRC_SDK_VRCSDK3
         if (CustomGUI.StandardButton("Detect VRC Animators")) {
             (target as VRCAvatarStickerGenerator).AutoDetectAnimators();
             serializedObject.Update();
             EditorUtility.SetDirty(target);
         }
-        CustomGUI.ItalicLabel("Uses your avatar animator to detect your VRC Avatar Descriptor.");
+        #endif
+
+        CustomGUI.SmallLineGap();
+
+        if (GetIsAnimatorWronglySet()) {
+            CustomGUI.RenderWarningMessage("Your animator already has a controller (you should delete it)");
+        } else if (GetIsAnimatorSet()) {
+            CustomGUI.RenderErrorMessage("You must click the button below to merge your animators");
+        } else {
+            CustomGUI.RenderSuccessMessage("Your animator has been set");
+        }
+
+        CustomGUI.SmallLineGap();
+
+        if (CustomGUI.StandardButton("Merge Animators")) {
+            ApplyAnimators();
+
+            serializedObject.Update();
+            EditorUtility.SetDirty(target);
+        }
 
         CustomGUI.LineGap();
-        CustomGUI.BoldLabel("Step 2: Optional settings");
+        CustomGUI.LargeLabel("Step 4: Settings (optional)");
         CustomGUI.SmallLineGap();
 
         EditorGUILayout.PropertyField(serializedObject.FindProperty("repositionCamera"), new GUIContent("Re-position Camera"));
@@ -136,13 +324,20 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         CustomGUI.SmallLineGap();
 
         CustomGUI.LineGap();
-        CustomGUI.BoldLabel("Step 3: Configure parameters");
+        CustomGUI.LargeLabel("Step 3: Configure parameters (optional)");
         CustomGUI.SmallLineGap();
 
         parameterSettingsList.DoLayoutList();
         
+        if (CustomGUI.StandardButton("Populate")) {
+            PopulateParameters();
+            serializedObject.Update();
+            EditorUtility.SetDirty(target);
+        }
+        CustomGUI.ItalicLabel("Warning: This deletes all existing parameters");
+
         CustomGUI.LineGap();
-        CustomGUI.BoldLabel("Step 4: Run");
+        CustomGUI.LargeLabel("Step 4: Generate");
         CustomGUI.SmallLineGap();
 
         GUILayout.Label("Enter play mode to generate stickers!");
@@ -153,7 +348,7 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         }
 
         CustomGUI.SmallLineGap();
-        CustomGUI.BoldLabel("Debugging");
+        CustomGUI.LargeLabel("Debugging");
         CustomGUI.SmallLineGap();
 
         if (CustomGUI.StandardButton("Reposition Camera")) {
@@ -181,44 +376,49 @@ public class VRCAvatarStickerGeneratorEditor : Editor
     {
         SerializedProperty element = parameterSettingsList.serializedProperty.GetArrayElementAtIndex(index);
 
-        EditorGUI.LabelField(new Rect(rect.x, rect.y, 100, EditorGUIUtility.singleLineHeight), "Name");
+        var margin = 50;
+
+        var firstColumnPerc = 0.4f;
+        var firstColumnWidth = rect.width * firstColumnPerc;
 
         EditorGUI.PropertyField(
-            new Rect(rect.x + 50, rect.y, 100, EditorGUIUtility.singleLineHeight), 
+            new Rect(margin, rect.y, firstColumnWidth, EditorGUIUtility.singleLineHeight), 
             element.FindPropertyRelative("name"),
             GUIContent.none
-        ); 
-
-        EditorGUI.LabelField(new Rect(rect.x + 175, rect.y, 50, EditorGUIUtility.singleLineHeight), "Type");
+        );
+        
+        var secondColumnPerc = 0.2f;
+        var secondColumnWidth = rect.width * secondColumnPerc;
 
         EditorGUI.PropertyField(
-            new Rect(rect.x + 225, rect.y, 50, EditorGUIUtility.singleLineHeight),
+            new Rect(margin + firstColumnWidth, rect.y, secondColumnWidth, EditorGUIUtility.singleLineHeight),
             element.FindPropertyRelative("type"),
             GUIContent.none
-        ); 
+        );
 
-        EditorGUI.LabelField(new Rect(rect.x + 300, rect.y, 50, EditorGUIUtility.singleLineHeight), "Value");
+        var thirdColumnPerc = 0.4f;
+        var thirdColumnWidth = rect.width * thirdColumnPerc - margin;
 
         var enumValueIndex = element.FindPropertyRelative("type").enumValueIndex;
 
         switch (enumValueIndex) {
             case 0:
                 EditorGUI.PropertyField(
-                    new Rect(rect.x + 350, rect.y, 100, EditorGUIUtility.singleLineHeight),
+                    new Rect(margin + firstColumnWidth + secondColumnWidth, rect.y, thirdColumnWidth, EditorGUIUtility.singleLineHeight),
                     element.FindPropertyRelative("floatValue"),
                     GUIContent.none
                 );
                 break;
             case 1:
                 EditorGUI.PropertyField(
-                    new Rect(rect.x + 350, rect.y, 100, EditorGUIUtility.singleLineHeight),
+                    new Rect(margin + firstColumnWidth + secondColumnWidth, rect.y, thirdColumnWidth, EditorGUIUtility.singleLineHeight),
                     element.FindPropertyRelative("intValue"),
                     GUIContent.none
                 );
                 break;
             case 2:
                 EditorGUI.PropertyField(
-                    new Rect(rect.x + 350, rect.y, 100, EditorGUIUtility.singleLineHeight),
+                    new Rect(margin + firstColumnWidth + secondColumnWidth, rect.y, thirdColumnWidth, EditorGUIUtility.singleLineHeight),
                     element.FindPropertyRelative("boolValue"),
                     GUIContent.none
                 );

@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
 using UnityEngine;
-using UnityEditor.Animations;
 using System.Reflection;
 
 #if VRC_SDK_VRCSDK3
@@ -19,13 +18,11 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     public Camera camera;
     public Transform head;
     public Animator animator;
-    [HideInInspector]
-    public AnimatorController[] animatorControllers;
+    public RuntimeAnimatorController[] animatorControllers;
     public bool repositionCamera = true;
     public float cameraOffset = 0f;
     public bool disableTransitions = true;
     public int transitionDelay = 100;
-    [HideInInspector]
     public ParameterSetting[] parameterSettings = new ParameterSetting[0];
     public bool randomlyRotateVertically = true;
     public bool randomlyRotateHorizontally = true;
@@ -80,6 +77,10 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
             throw new System.Exception("No animator");
         }
 
+        if (animator.runtimeAnimatorController == null) {
+            throw new System.Exception("No animator controller");
+        }
+
         if (head == null) {
             head = animator.GetBoneTransform(HumanBodyBones.Head);
         }
@@ -123,31 +124,6 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         }
     }
 
-    AnimatorController MergeAnimatorControllers(AnimatorController[] animatorControllersToMerge) {
-        var newAnimatorController = new AnimatorController();
-        List<AnimatorControllerLayer> newLayers = new List<AnimatorControllerLayer>();
-        List<AnimatorControllerParameter> newParameters = new List<AnimatorControllerParameter>();
-
-        for (var i = 0; i < animatorControllersToMerge.Length; i++) {
-            var layers = animatorControllersToMerge[i].layers;
-
-            for (var l = 0; l < layers.Length; l++) {
-                newLayers.Add(layers[l]);
-            }
-
-            var parameters = animatorControllersToMerge[i].parameters;
-
-            for (var p = 0; p < parameters.Length; p++) {
-                newParameters.Add(parameters[p]);
-            }
-        }
-
-        newAnimatorController.parameters = newParameters.ToArray();
-        newAnimatorController.layers = newLayers.ToArray();
-
-        return newAnimatorController;
-    }
-
     void CreateMissingDirs() {
         if (!Directory.Exists(rawOutputPath)) {
             Debug.Log("Creating output directory...");
@@ -174,53 +150,6 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         
         Vector3 cameraPosition = camera.transform.position;
         camera.transform.position = new Vector3(cameraPosition.x, head.position.y + cameraOffset, cameraPosition.z);
-    }
-
-    void ApplyAnimatorController(AnimatorController newAnimatorController) {
-        animator.runtimeAnimatorController = newAnimatorController;
-    }
-
-    AnimatorController RemoveAnimatorTransitions(AnimatorController animatorController) {
-        List<AnimatorControllerLayer> newLayers = new List<AnimatorControllerLayer>();
-
-        for (var i = 0; i < animatorController.layers.Length; i++) {
-            var layer = animatorController.layers[i];
-
-            var stateMachine = layer.stateMachine;
-
-            var anyStateTransitions = stateMachine.anyStateTransitions;
-
-            for (var t = 0; t < anyStateTransitions.Length; t++) {
-                var transition = anyStateTransitions[t];
-                transition.duration = 0;
-                transition.hasExitTime = false;
-                transition.hasFixedDuration = true;
-            }
-
-            stateMachine.anyStateTransitions = anyStateTransitions;
-
-            var states = stateMachine.states;
-
-            for (var s = 0; s < states.Length; s++) {
-                var state = states[s].state;
-                var transitions = state.transitions;
-
-                for (var t = 0; t < transitions.Length; t++) {
-                    var transition = transitions[t];
-                    transition.duration = 0;
-                    transition.hasExitTime = false;
-                    transition.hasFixedDuration = true;
-                }
-            }
-
-            layer.stateMachine = stateMachine;
-
-            newLayers.Add(layer);
-        }
-        
-        animatorController.layers = newLayers.ToArray();
-
-        return animatorController;
     }
 
     void OnApplicationQuit() {
@@ -302,16 +231,6 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
             ScaleAvatar();
         }
 
-        var newAnimatorController = MergeAnimatorControllers(animatorControllers);
-
-        if (disableTransitions) {
-            newAnimatorController = RemoveAnimatorTransitions(newAnimatorController);
-        }
-
-        ApplyAnimatorController(newAnimatorController);
-
-        await Task.Delay(100);
-
         if (repositionCamera) {
             PositionCamera();
         }
@@ -339,7 +258,11 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         Debug.Log("Done!");
 
         if (stopPlayingAtEnd) {
+            #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
+            #else
+            Application.Quit();
+            #endif
         }
     }
 
@@ -403,11 +326,11 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
 
         var component = animator.transform.GetComponent<VRCAvatarDescriptor>();
 
-        var newAnimatorControllers = new List<AnimatorController>();
+        var newAnimatorControllers = new List<RuntimeAnimatorController>();
 
         for (var i = 0; i < component.baseAnimationLayers.Length; i++) {
             var baseAnimationLayer = component.baseAnimationLayers[i];
-            var animatorController = baseAnimationLayer.animatorController as AnimatorController;
+            var animatorController = baseAnimationLayer.animatorController as RuntimeAnimatorController;
 
             if (animatorController != null) {
                 newAnimatorControllers.Add(animatorController);
