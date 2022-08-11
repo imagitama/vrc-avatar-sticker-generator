@@ -1,3 +1,7 @@
+# 1.3.2
+
+- fixed weird error when copying transitions
+
 # 1.3.1
 
 - fixed a bug where original transitions were disabled

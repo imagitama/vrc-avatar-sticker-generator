@@ -37,16 +37,17 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         List<AnimatorControllerParameter> newParameters = new List<AnimatorControllerParameter>();
 
         for (var i = 0; i < animatorControllersToMerge.Length; i++) {
-            var animatorController = (AnimatorController)Instantiate(animatorControllersToMerge[i]);
+            // TODO: Cleanup after us?
+            AnimatorController tempAnimatorController = Animators.CopyAnimatorController(animatorControllersToMerge[i], "Assets/stickers_temp/animator_" + i.ToString() + ".controller");
 
-            var layers = animatorController.layers;
+            var layers = tempAnimatorController.layers;
 
-            for (var l = 0; l < animatorController.layers.Length; l++) {
-                var layer = animatorController.layers[l];
+            for (var l = 0; l < tempAnimatorController.layers.Length; l++) {
+                var layer = tempAnimatorController.layers[l];
                 newLayers.Add(layer);
             }
 
-            var parameters = animatorController.parameters;
+            var parameters = tempAnimatorController.parameters;
 
             for (var p = 0; p < parameters.Length; p++) {
                 var parameter = parameters[p];
@@ -98,10 +99,10 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         for (var i = 0; i < animatorController.layers.Length; i++) {
             var layer = animatorController.layers[i];
 
-            var stateMachine = (AnimatorStateMachine)Instantiate(layer.stateMachine);
+            var stateMachine = layer.stateMachine;
 
             for (var t = 0; t < stateMachine.anyStateTransitions.Length; t++) {
-                var transition = (AnimatorStateTransition)Instantiate(stateMachine.anyStateTransitions[t]);
+                var transition = stateMachine.anyStateTransitions[t];
                 transition.duration = 0;
                 transition.hasExitTime = false;
                 transition.hasFixedDuration = true;
@@ -109,10 +110,10 @@ public class VRCAvatarStickerGeneratorEditor : Editor
             }
 
             for (var s = 0; s < stateMachine.states.Length; s++) {
-                var state = (AnimatorState)Instantiate(stateMachine.states[s].state);
+                var state = stateMachine.states[s].state;
 
                 for (var t = 0; t < state.transitions.Length; t++) {
-                    var transition = (AnimatorStateTransition)Instantiate(state.transitions[t]);
+                    var transition = state.transitions[t];
                     transition.duration = 0;
                     transition.hasExitTime = false;
                     transition.hasFixedDuration = true;
