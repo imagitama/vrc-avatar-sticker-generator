@@ -15,7 +15,17 @@ using VRC.SDK3.Avatars.Components;
 
 public class VRCAvatarStickerGenerator : MonoBehaviour
 {
+    public class Frame {
+        public byte[] bytes;
+    }
+
     public Camera camera;
+
+    // video
+    public bool doVideo = false;
+    public int frameLimit = 90;
+
+    // photo
     public Transform head;
     public Animator animator;
     public RuntimeAnimatorController[] animatorControllers;
@@ -38,6 +48,10 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     public int borderWidth = 2;
     public bool emptyDirectories = true;
     public bool debugHideBody = false;
+
+    // video
+    private int currentFrameIdx = 0;
+    private Frame[] frames;
 
     private bool done = false;
     private bool hasStopped = false;
@@ -68,9 +82,15 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     {
         rawOutputPath = Application.dataPath + "/../stickers";
         processedOutputPath = rawOutputPath + "/output";
-        
+
         if (camera == null) {
             throw new System.Exception("No camera");
+        }
+
+        if (doVideo) {
+            Application.targetFrameRate = 30;
+            currentFrameIdx = 0;
+            return;
         }
 
         if (animator == null) {
@@ -107,8 +127,29 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         ScaleAvatar();
     }
 
+    bool IsAtRecordingLimit() {
+        return currentFrameIdx == frameLimit;
+    }
+
     void LateUpdate()
     {  
+        if (doVideo) {
+            if (IsAtRecordingLimit()) {
+                StopPlaying();
+                ProcessTextures();
+                ProcessVideo();
+            } else {
+                if (!done) {
+                    BeginVideo();
+                    done = true;
+                    return;
+                }
+
+                RecordVideo();
+            }
+            return;
+        }
+
         if (debugHideBody) {
             DebugHideBody();
 
@@ -124,10 +165,22 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         }
     }
 
+    void RecordVideo() {
+        StoreCameraToTexture(currentFrameIdx);
+        currentFrameIdx++;
+    }
+
     void CreateMissingDirs() {
         if (!Directory.Exists(rawOutputPath)) {
             Debug.Log("Creating output directory...");
             Directory.CreateDirectory(rawOutputPath);
+        }
+
+        string videoFramesDirPath = rawOutputPath + "/video-frames";
+
+        if (!Directory.Exists(videoFramesDirPath)) {
+            Debug.Log("Creating video frames directory...");
+            Directory.CreateDirectory(videoFramesDirPath);
         }
 
         if (!Directory.Exists(processedOutputPath)) {
@@ -216,6 +269,25 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         Directory.Delete(rawOutputPath, true);
     }
 
+    async void BeginVideo() {
+        Debug.Log("Begin video!");
+
+        PrepareCamera();
+
+        CreateMissingDirs();
+        
+        frames = new Frame[frameLimit];
+    }
+
+    void PrepareCamera() {
+        // if we don't do this here then all images come out super dark
+        RenderTexture renderTexture = new RenderTexture(1024, 1024, 24);
+        camera.targetTexture = renderTexture;
+
+        // sets the "main" thing we are rendering to the camera
+        RenderTexture.active = camera.targetTexture;
+    }
+
     async void Begin() {
         Debug.Log("Begin!");
 
@@ -235,9 +307,7 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
             PositionCamera();
         }
 
-        // if we don't do this here then all images come out super dark
-        RenderTexture renderTexture = new RenderTexture(1024, 1024, 24);
-        camera.targetTexture = renderTexture;
+        PrepareCamera();
 
         var prefix = "";
         
@@ -258,12 +328,16 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         Debug.Log("Done!");
 
         if (stopPlayingAtEnd) {
-            #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-            #else
-            Application.Quit();
-            #endif
+            StopPlaying();
         }
+    }
+
+    void StopPlaying() {
+        #if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+        #else
+        Application.Quit();
+        #endif
     }
 
     void ResetParameters() {
@@ -427,7 +501,10 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
 
                 await Task.Delay(transitionDelay);
 
-                CameraToPng(prefix, gestureLeftIdx, gestureRightIdx);
+                string fileName = (prefix != "" ? prefix + "_" : "") + gestureLeftIdx + "_" + gestureRightIdx + ".png";
+                string pngFilePath =  rawOutputPath + "/" + fileName;
+
+                CameraToPng(pngFilePath);
                 
                 if (randomlyRotateVertically || randomlyRotateHorizontally) {
                     ResetMeshRotation(rotationAxis, rotationAngle);
@@ -437,7 +514,7 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         
     }
 
-    void CameraToPng(string prefix, int gestureLeftIdx, int gestureRightIdx) {
+    void CameraToPng(string filePath) {
         if (hasStopped) {
             return;
         }
@@ -454,9 +531,6 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         RenderTexture.active = activeRenderTexture;
  
         var bytes = texture2d.EncodeToPNG();
-
-        string fileName = (prefix != "" ? prefix + "_" : "") + gestureLeftIdx + "_" + gestureRightIdx + ".png";
-        string filePath =  rawOutputPath + "/" + fileName;
 
         Debug.Log(filePath);
 
@@ -491,5 +565,72 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
 
     void OpenInExplorer(string pathToOpen) {
         System.Diagnostics.Process.Start(pathToOpen);
+    }
+
+    IEnumerator StoreCameraToTexture(int frameIdx) {
+        Debug.Log("Store camera frame " + frameIdx.ToString());
+
+        yield return new WaitForEndOfFrame();
+
+        Debug.Log("Render!");
+
+        camera.Render();
+ 
+        Texture2D texture2d = new Texture2D(camera.targetTexture.width, camera.targetTexture.height);
+
+        // Graphics.CopyTexture(RenderTexture.active, texture2d);
+
+        // // reads pixels from active render target (which is RenderTexture.active)
+        texture2d.ReadPixels(new Rect(0, 0, camera.targetTexture.width, camera.targetTexture.height), 0, 0);
+        texture2d.Apply();
+
+        byte[] bytes = texture2d.EncodeToPNG();
+
+        UnityEngine.Object.Destroy(texture2d);
+
+        frames[frameIdx] = new Frame() {
+            bytes = bytes
+        };
+    }
+
+    void ProcessTextures() {
+        for (var i = 0; i < frames.Length; i++) {
+            Frame frame = frames[i];
+
+            // var bytes = texture2d.EncodeToPNG();
+
+            var bytes = frame.bytes;
+
+            var filePath = rawOutputPath + "/video-frames/" + i + ".png";
+
+            Debug.Log(filePath);
+
+            File.WriteAllBytes(filePath, bytes);
+        }
+    }
+    
+    void ProcessVideo() {
+        Debug.Log("Processing video...");
+
+        string globToImages = rawOutputPath + "/video-frames/%01d.png";
+
+        if (!Directory.Exists(processedOutputPath)) {
+            Debug.Log("Creating output directory...");
+            Directory.CreateDirectory(processedOutputPath);
+        }
+
+        string outputPath = processedOutputPath + "/sticker.webm";
+
+        // string fileName = Application.dataPath.Replace("/", "\\") + "\\PeanutTools\\VRC_Avatar_Sticker_Generator\\bin\\ImageMagick\\magick.exe";
+        string fileName = "ffmpeg";
+        string args = "-i '" + globToImages + "' -framerate 30 -vcodec libvpx-vp9 -b:v 400k -an -s 512x512 -pix_fmt yuva420p \"" + outputPath + "\"";
+
+        Debug.Log(fileName + " " + args);
+
+        System.Diagnostics.Process process = new System.Diagnostics.Process();
+        process.StartInfo.FileName = fileName;
+        process.StartInfo.Arguments = args;
+        process.Start();
+        process.WaitForExit();
     }
 }
