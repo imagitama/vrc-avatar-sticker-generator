@@ -213,7 +213,9 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     }
 
     void EmptyDirs() {
-        Directory.Delete(rawOutputPath, true);
+        if (Directory.Exists(processedOutputPath)) {
+            Directory.Delete(processedOutputPath, true);
+        }
     }
 
     async void Begin() {
@@ -486,7 +488,12 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     }
 
     public void OpenOutputFolder() {
-        OpenInExplorer(processedOutputPath);
+        rawOutputPath = Application.dataPath + "/../stickers";
+        processedOutputPath = rawOutputPath + "/output";
+
+        if (Directory.Exists(processedOutputPath)) {
+            OpenInExplorer(processedOutputPath);
+        }
     }
 
     void OpenInExplorer(string pathToOpen) {

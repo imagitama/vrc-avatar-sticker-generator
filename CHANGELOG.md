@@ -1,3 +1,9 @@
+# 1.4.0
+
+- added `HideBehind.prefab` to do manual cropping
+- added `StylisedShader.shader` to give it a cartoony look (https://github.com/ardahamamcioglu/Unity-Stylised-Shader)
+- fixed initial run always failing because output folder doesn't exist
+
 # 1.3.2
 
 - fixed weird error when copying transitions
