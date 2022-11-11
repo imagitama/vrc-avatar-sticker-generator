@@ -38,6 +38,8 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
     public int borderWidth = 2;
     public bool emptyDirectories = true;
     public bool debugHideBody = false;
+    public bool addOilPainting = false;
+    public int oilPaintingAmount = 2;
 
     private bool done = false;
     private bool hasStopped = false;
@@ -253,9 +255,7 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
             return;
         }
 
-        if (addBorder) {
-            ProcessAllImages();
-        }
+        ProcessAllImages();
 
         Debug.Log("Done!");
 
@@ -423,6 +423,11 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
                 
                 await Task.Delay(10);
 
+                // re-position again in case animators re-position body into floor
+                if (repositionCamera) {
+                    PositionCamera();
+                }
+
                 if (lookAtCamera) {
                     RotateEyesToLookAtCamera();
                 }
@@ -476,7 +481,7 @@ public class VRCAvatarStickerGenerator : MonoBehaviour
         }
 
         string fileName = Application.dataPath.Replace("/", "\\") + "\\PeanutTools\\VRC_Avatar_Sticker_Generator\\bin\\ImageMagick\\magick.exe";
-        string args = "mogrify -path \"" + processedOutputPath + "\" -bordercolor none -border " + borderWidth.ToString() + " -background white -alpha background -channel A -blur 0x" + borderWidth.ToString() + " -level 0,0% -trim +repage -resize 512x512 \"" + globToImages + "\"";
+        string args = "mogrify -path \"" + processedOutputPath + "\" " + (addOilPainting ? "-paint " + oilPaintingAmount + "" : "") + " -bordercolor none " + (addBorder ? "-border " + borderWidth.ToString() : "") + " -background white -alpha background -channel A " + (addBorder ? "-blur 0x" + borderWidth.ToString() + "" : "") + " -level 0,0% -trim +repage -resize 512x512 \"" + globToImages + "\"";
 
         Debug.Log(fileName + " " + args);
 

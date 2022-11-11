@@ -256,6 +256,14 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         CustomGUI.ItalicLabel("If to move the camera at all");
         CustomGUI.SmallLineGap();
 
+        if (serializedObject.FindProperty("repositionCamera").boolValue) {
+            if (CustomGUI.StandardButton("Preview Camera")) {
+                (target as VRCAvatarStickerGenerator).PositionCamera();
+            }
+
+            CustomGUI.SmallLineGap();
+        }
+
         EditorGUILayout.PropertyField(serializedObject.FindProperty("cameraOffset"), new GUIContent("Camera Offset"));
         CustomGUI.ItalicLabel("Applies a Y axis offset after positioning the camera at the head bone");
         CustomGUI.SmallLineGap();
@@ -323,6 +331,14 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         CustomGUI.ItalicLabel("The border width (pixels)");
         CustomGUI.SmallLineGap();
 
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("addOilPainting"), new GUIContent("Add Oil Painting Effect"));
+        CustomGUI.ItalicLabel("If to add an \"oil painting\" effect to each sticker");
+        CustomGUI.SmallLineGap();
+
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("oilPaintingAmount"), new GUIContent("Effect Amount"));
+        CustomGUI.ItalicLabel("The effect amount (1-2 works best)");
+        CustomGUI.SmallLineGap();
+
         CustomGUI.LineGap();
         CustomGUI.LargeLabel("Step 3: Configure parameters (optional)");
         CustomGUI.SmallLineGap();
@@ -351,13 +367,7 @@ public class VRCAvatarStickerGeneratorEditor : Editor
         CustomGUI.LargeLabel("Debugging");
         CustomGUI.SmallLineGap();
 
-        if (CustomGUI.StandardButton("Reposition Camera")) {
-            (target as VRCAvatarStickerGenerator).PositionCamera();
-        }
-
-        CustomGUI.SmallLineGap();
-
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("debugHideBody"), new GUIContent("Debug Hide Body"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("debugHideBody"), new GUIContent("Hide Body"));
 
         CustomGUI.LineGap();
 

@@ -1,3 +1,9 @@
+# 1.5.0
+
+- always crops and resizes even if border disabled
+- added "oil painting" mode
+- fixed camera not re-positioning after animator applied
+
 # 1.4.0
 
 - added `HideBehind.prefab` to do manual cropping
