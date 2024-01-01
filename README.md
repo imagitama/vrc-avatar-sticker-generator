@@ -2,7 +2,7 @@
 
 Generates Telegram stickers from a VRChat (or ChilloutVR) avatar. It loops through each hand gesture and plays the animation on your avatar and outputs a 512x512 transparent sticker with a white outline.
 
-<img src="Screenshots/output.png" width="500px" />
+<img src="screenshots/output.png" width="500px" />
 
 Tested in Unity 2019.4.31f1 on Windows 10 with the Canis Woof by Rezillo Ryker.
 
